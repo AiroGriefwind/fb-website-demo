@@ -36,8 +36,8 @@ jobs:
 
       - name: Run CMS login test
         env:
-          LOGIN_URL: ${{ secrets.LOGIN_URL }}
-          ADMIN_URL: ${{ secrets.ADMIN_URL }}
-          USERNAME: ${{ secrets.USERNAME }}
-          PASSWORD: ${{ secrets.PASSWORD }}
+            CMS_LOGIN_URL: ${{ secrets.CMS_LOGIN_URL }}
+            CMS_ADMIN_URL: ${{ secrets.CMS_ADMIN_URL }}
+            CMS_USERNAME: ${{ secrets.CMS_USERNAME }}
+            CMS_PASSWORD: ${{ secrets.CMS_PASSWORD }}
         run: python cms_scraper.py
