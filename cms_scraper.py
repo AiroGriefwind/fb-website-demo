@@ -1,4 +1,5 @@
 import os
+import tempfile
 import time
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -25,6 +26,10 @@ def main():
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option('useAutomationExtension', False)
+
+    # Add this line to use a unique temp directory for Chrome user data
+    user_data_dir = tempfile.mkdtemp()
+    chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
 
     driver = webdriver.Chrome(options=chrome_options)
     driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
