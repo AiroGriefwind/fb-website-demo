@@ -13,6 +13,10 @@ from functools import wraps
 from dotenv import load_dotenv
 load_dotenv()
 
+import json
+import datetime
+import pytz  # make sure to pip install pytz
+from selenium.webdriver.common.action_chains import ActionChains
 # ============================ CONFIG =================================
 
 LOGIN_URL = os.getenv("CMS_LOGIN_URL")
@@ -101,7 +105,110 @@ def select_category(driver, wait, category_text="1594536350855514 - 巴士的娛
         By.XPATH, '//span[contains(@class,"jcf-select")][not(contains(@class,"jcf-hidden"))]//span[contains(@class,"jcf-select-text")]//span'
     )))
     print(f"✅ Selected dropdown value: {selected_value_element.text.strip()}")
+    print("✅ Selected dropdown value. Waiting 30 seconds for full post list to load...")
+    time.sleep(30)  # Wait 30 seconds for all posts to render
     return sel_text
+
+# HK timezone object for conversion/handling
+HKT = pytz.timezone("Asia/Hong_Kong")
+
+def parse_hk_datetime(date_str, now_year):
+    """
+    Example: "08-01 04:20 PM" -> datetime.datetime(2025,8,1,16,20)
+    """
+    try:
+        dt = datetime.datetime.strptime(date_str, "%m-%d %I:%M %p")  # no year
+        full_dt = dt.replace(year=now_year)
+        return HKT.localize(full_dt)
+    except Exception as e:
+        print("Failed to parse datetime:", date_str, e)
+        return None
+
+@retry_step
+def scroll_and_scrape_posts(driver, wait, max_hours=48, outfile="fb_posts.json"):
+    print(f"==[ SCRAPING FB POSTS, WITHIN LAST {max_hours} HOURS ]==")
+    # Find the main container
+    postlist_ul = wait.until(EC.presence_of_element_located((
+        By.XPATH, '//ul[contains(@class,"fan-page-list")]'
+    )))
+
+    # We'll keep all results in this list
+    posts = []
+    seen_post_ids = set()
+    load_more = True
+    last_post_time = None
+    first_run = True
+
+    ACTION = ActionChains(driver)
+    now_hkt = datetime.datetime.now(HKT)
+    min_time = now_hkt - datetime.timedelta(hours=max_hours)
+    print(f"Scrape window: {min_time} -> {now_hkt}")
+
+    while load_more:
+        # Get all <li class="fan-page-card ..."> under the UL
+        li_elems = postlist_ul.find_elements(By.XPATH, './li[contains(@class,"fan-page-card")]')
+        new_count = 0
+        for li in li_elems:
+            try:
+                # title and URL
+                title_elem = li.find_element(By.XPATH, './/div[contains(@class,"text-holder")]/p')
+                title_text = title_elem.text.strip()
+                # time
+                time_elem = li.find_element(By.XPATH, './/div[contains(@class,"text-holder")]/span')
+                update_time_str = time_elem.text.strip()  # e.g. "08-01 04:20 PM"
+                # build dt
+                post_dt = parse_hk_datetime(update_time_str, now_hkt.year)
+                if not post_dt:
+                    continue
+                # Stop if posts are older than threshold
+                if post_dt < min_time:
+                    load_more = False
+                    print(f"Post earlier than 48h: {title_text} ({update_time_str})")
+                    break
+                # Status counts
+                footer_elem = li.find_element(By.XPATH, './/div[contains(@class,"post-footer-icons")]')
+                reached_num = None
+                engaged_num = None
+                for s in footer_elem.find_elements(By.XPATH, './span'):
+                    lab = s.find_element(By.XPATH, './small').text
+                    val_txt = s.text.split('\n')[0].replace(',', '').strip()
+                    if lab == "reached":
+                        reached_num = int(val_txt) if val_txt.isdigit() else val_txt
+                    if lab == "engaged":
+                        engaged_num = int(val_txt) if val_txt.isdigit() else val_txt
+                # Compose post object
+                postid = li.get_attribute('data-postid') or hash(title_text + update_time_str)
+                if postid in seen_post_ids:
+                    continue
+                seen_post_ids.add(postid)
+                posts.append({
+                    "title": title_text,
+                    "datetime": post_dt.strftime("%Y-%m-%d %H:%M"),
+                    "timestamp": int(post_dt.timestamp()),
+                    "reached": reached_num,
+                    "engaged": engaged_num,
+                    "raw_time": update_time_str,
+                })
+                new_count += 1
+            except Exception as e:
+                continue
+        if not load_more:
+            break
+        # Don't scroll if last run added no new
+        if new_count == 0 and not first_run:
+            print("No more new posts loaded on scroll. Ending scrape.")
+            break
+        first_run = False
+        # Scroll to bottom (of UL box), which loads more via infinite scroll
+        driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", postlist_ul)
+        time.sleep(1.5)
+
+    # SAVE TO JSON
+    with open(outfile, "w", encoding='utf-8') as f:
+        json.dump(posts, f, ensure_ascii=False, indent=2)
+    print(f"Saved {len(posts)} posts to {outfile}")
+
+    return posts
 
 @retry_step
 def logout(driver, wait):
@@ -148,7 +255,9 @@ def main():
         go_to_facebook(driver, wait)
         print("==[ STEP: SELECT CATEGORY ]==")
         select_category(driver, wait)
-        print("🎉 All navigation steps succeeded! (Insert scraping logic here...)")
+        print("==[ STEP: SCRAPE POSTS ]==")
+        scroll_and_scrape_posts(driver, wait, max_hours=48, outfile="fb_posts_last48h.json")
+        print("==[ SCRAPE FINISHED ]==")
 
     except Exception as e:
         print("❌ Encountered error during automation:", e)
