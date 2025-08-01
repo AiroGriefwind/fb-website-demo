@@ -2,3 +2,4 @@ keyword_scrape.py
 .env
 .github/workflows/keywordScrape.yml
 app.py
+fb_posts_last48h.json
