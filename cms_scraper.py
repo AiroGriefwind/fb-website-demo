@@ -4,7 +4,9 @@ import time
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 try:
     from dotenv import load_dotenv
@@ -17,6 +19,47 @@ ADMIN_URL = os.getenv("CMS_ADMIN_URL")
 USERNAME = os.getenv("CMS_USERNAME")
 PASSWORD = os.getenv("CMS_PASSWORD")
 
+def wait_for_element(driver, by, value, timeout=10):
+    """Return the element, or None if not found in timeout seconds."""
+    try:
+        return WebDriverWait(driver, timeout).until(EC.presence_of_element_located((by, value)))
+    except TimeoutException:
+        return None
+
+def logout_and_check(driver):
+    # 1. Open user menu by clicking the avatar button (id="navbar-user")
+    try:
+        avatar_btn = wait_for_element(driver, By.ID, "navbar-user", timeout=5)
+        if not avatar_btn:
+            print("Cannot find avatar button for logout.")
+            return False
+        avatar_btn.click()
+        time.sleep(1)  # Let the dropdown animate in
+    except Exception as ex:
+        print(f"Error opening dropdown: {ex}")
+        return False
+
+    # 2. Click "Logout" in the dropdown (id="logout")
+    try:
+        logout_btn = wait_for_element(driver, By.ID, "logout", timeout=5)
+        if not logout_btn:
+            print("Logout button not found in dropdown.")
+            return False
+        logout_btn.click()
+    except Exception as ex:
+        print(f"Error clicking logout: {ex}")
+        return False
+
+    # 3. Wait for login page (look for login box, e.g. username field)
+    time.sleep(2)
+    login_box = wait_for_element(driver, By.NAME, "username", timeout=10)
+    if login_box:
+        print("Logout completed, login form detected.")
+        return True
+    else:
+        print("Logout failed: login form not detected after logout click.")
+        return False
+
 def main():
     chrome_options = Options()
     chrome_options.add_argument("--headless")
@@ -25,9 +68,7 @@ def main():
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    chrome_options.add_experimental_option('useAutomationExtension', False)
-
-    # Add this line to use a unique temp directory for Chrome user data
+    chrome_options.add_experimental_option("useAutomationExtension", False)
     user_data_dir = tempfile.mkdtemp()
     chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
 
@@ -67,13 +108,21 @@ def main():
 
     # --- Manual inspection countdown ---
     print("\n" + "="*60)
-    print("🚨 Browser will stay open for 30 seconds for manual inspection.")
-    print("⌨️  Copy the URL or inspect the page as needed.")
+    print("🚨 Browser will stay open for 15 seconds for manual inspection.")
+    print("⌨️ Copy the URL or inspect the page as needed.")
     print("="*60)
-    for i in range(30, 0, -1):
+
+    for i in range(15, 0, -1):
         print(f"Closing browser in {i} seconds...", end='\r')
         time.sleep(1)
-    print("\n👋 Countdown finished. Closing browser.")
+
+    print("\nAttempting logout before closing browser...")
+
+    # ---- LOGOUT BEFORE QUIT ----
+    logout_and_check(driver)
+
+    print("\n👋 Logout (if attempted) done. Closing browser.")
+
     driver.quit()
 
 if __name__ == "__main__":
