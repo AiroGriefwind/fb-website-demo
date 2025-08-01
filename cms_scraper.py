@@ -4,7 +4,7 @@ import time
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException, ElementClickInterceptedException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
@@ -18,7 +18,6 @@ LOGIN_URL = os.getenv("CMS_LOGIN_URL")
 ADMIN_URL = os.getenv("CMS_ADMIN_URL")
 USERNAME = os.getenv("CMS_USERNAME")
 PASSWORD = os.getenv("CMS_PASSWORD")
-BASE_URL = LOGIN_URL.split('/login')[0]  # a base for building absolute links
 
 def wait_for_element(driver, by, value, timeout=10):
     try:
@@ -75,14 +74,12 @@ def main():
     print("Opening login page...")
     driver.get(LOGIN_URL)
     time.sleep(2)
-
-    # Login
     driver.find_element(By.NAME, "username").send_keys(USERNAME)
     driver.find_element(By.NAME, "password").send_keys(PASSWORD)
     driver.find_element(By.NAME, "submit").click()
     time.sleep(3)
 
-    # Check for login success
+    # Login check
     success = False
     if driver.current_url.startswith(ADMIN_URL):
         try:
@@ -101,9 +98,8 @@ def main():
         driver.quit()
         exit(1)
 
-    # --------- CLICK "Hongkong" BUTTON ---------
+    # Navigate to Hongkong
     print("\nNavigating to Hongkong section...")
-    # Find 'a' with href containing '/admin/sites/features.php?site=hongkong'
     hongkong_link = wait_for_element(
         driver, By.XPATH, '//a[contains(@href, "/admin/sites/features.php?site=hongkong")]'
     )
@@ -116,7 +112,7 @@ def main():
     time.sleep(2)
     print(f"At: {driver.current_url}")
 
-    # --------- CLICK "Facebook" FEATURE ---------
+    # Click Facebook feature
     print("Navigating to Facebook feature...")
     facebook_link = wait_for_element(
         driver, By.XPATH, '//a[contains(@href, "/admin/facebook/?site=hongkong")]'
@@ -128,10 +124,85 @@ def main():
 
     facebook_link.click()
     time.sleep(2)
+    print(f"Now at Facebook feature page: {driver.current_url}")
 
-    print("Final page reached!")
-    print(f"Current URL: {driver.current_url}")
-    print(f"Page title: {driver.title}")
+    # ----------- Handle custom dropdown and select desired category -----------
+    # Wait for custom select to be present (top bar)
+    print("Selecting page category in Facebook list...")
+    select_span = wait_for_element(
+        driver, By.XPATH, '//span[contains(@class,"jcf-select")][not(contains(@class,"jcf-hidden"))]',
+        timeout=10
+    )
+    if not select_span:
+        print("Custom select menu not found!")
+        driver.quit()
+        return
+
+    try:
+        select_span.click()  # open the dropdown
+    except ElementClickInterceptedException:
+        driver.execute_script("arguments[0].click();", select_span)
+
+    # Wait for dropdown options to be present (visible)
+    print("Dropdown opened, looking for target option...")
+    # This XPATH finds the jcf-option span whose text NORMALIZED contains the text you want
+    option_text = "1594536350855514 - 巴士的娛圈事"
+    dropdown_option = None
+    for i in range(10):  # sometimes needs a bit of a loop due to animation
+        # Option 1: By exact text content
+        dropdown_option = None
+        try:
+            # Use contains AND strip spaces to be robust
+            dropdown_option = wait_for_element(
+                driver,
+                By.XPATH, f'//span[contains(@class,"jcf-option") and contains(normalize-space(.),"{option_text}")]',
+                timeout=2
+            )
+            if dropdown_option:
+                break
+        except Exception:
+            time.sleep(0.2)
+    # Option 2: fallback by data-index (usually "2" for your option)
+    if not dropdown_option:
+        dropdown_option = wait_for_element(
+            driver,
+            By.XPATH, '//span[contains(@class,"jcf-option") and @data-index="2"]',
+            timeout=2
+        )
+
+    if not dropdown_option:
+        print("Category option not found in custom dropdown!")
+        driver.quit()
+        return
+
+        # Store the text BEFORE click, then click
+    selected_text = dropdown_option.text.strip()
+    print(f"Dropdown category about to select: \"{selected_text}\"")
+    try:
+        dropdown_option.click()
+    except ElementClickInterceptedException:
+        driver.execute_script("arguments[0].click();", dropdown_option)
+    except Exception as e:
+        print("Could not select the dropdown option:", e)
+        driver.quit()
+        return
+
+    time.sleep(2)  # Wait for selection to be applied
+
+    # After click, check the current value of the selector (safe and robust)
+    selected_value_element = wait_for_element(
+        driver,
+        By.XPATH,
+        '//span[contains(@class,"jcf-select")][not(contains(@class,"jcf-hidden"))]//span[contains(@class,"jcf-select-text")]//span',
+        timeout=5
+    )
+    if selected_value_element:
+        print(f"Dropdown category now selected: \"{selected_value_element.text.strip()}\"")
+    else:
+        print("Could not find selected value after clicking option.")
+
+    # Optional: Debug check the filter is applied (e.g. an element only present after select)
+    print(f"Current URL after dropdown: {driver.current_url}")
 
     # --------- LOGOUT ---------
     print("\nAttempting logout before closing browser...")
