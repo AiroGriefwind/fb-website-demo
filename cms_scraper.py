@@ -229,7 +229,7 @@ def logout(driver, wait):
 
 def main():
     chrome_options = Options()
-    # chrome_options.add_argument("--headless")  # Enable if you do not want a UI
+    chrome_options.add_argument("--headless")  # Enable if you do not want a UI
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
