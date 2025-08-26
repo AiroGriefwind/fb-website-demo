@@ -50,19 +50,43 @@ def retry_step(func):
 
 # =================== STEPS ===========================================
 
-@retry_step
 def login(driver, wait):
     driver.get(LOGIN_URL)
-    wait.until(EC.presence_of_element_located((By.NAME,"username"))).send_keys(USERNAME)
-    driver.find_element(By.NAME, "password").send_keys(PASSWORD)
-    driver.find_element(By.NAME, "submit").click()
-    time.sleep(2)
-    if not driver.current_url.startswith(ADMIN_URL):
-        raise Exception("Not redirected to admin page after login.")
-    span = wait.until(EC.presence_of_element_located((By.ID,"login-username")))
-    if "Hello FB Autopost!" not in span.text:
-        raise Exception("Did not see expected dashboard greeting.")
-    print("✅ Login successful.")
+    time.sleep(2)  # let redirect settle
+
+    try:
+        # Try to find login form
+        username_box = driver.find_elements(By.NAME, "username")
+        if username_box:
+            username_box[0].send_keys(USERNAME)
+            driver.find_element(By.NAME, "password").send_keys(PASSWORD)
+            driver.find_element(By.NAME, "submit").click()
+            time.sleep(2)
+        else:
+            print("Username input not found: already logged in or different page.")
+    except Exception as e:
+        print("Failed to fill login form:", e)
+    
+    # Now, confirm we're on the admin or homepage regardless of how we got there
+    try:
+        # Wait for a unique post-login element, e.g., "Hongkong" button
+        wait.until(EC.presence_of_element_located((By.XPATH, '//a[contains(@href, "/admin/sites/features.php?site=hongkong")]')))
+        print("✅ Reached admin/homepage after login/redirect")
+    except Exception as e:
+        print("Login may have failed. Dumping diagnostic info...")
+        dump_html_and_screenshot(driver)
+        raise
+
+def dump_html_and_screenshot(driver, prefix="login_fail"):
+    import datetime
+    nowstr = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    sspath = f"{prefix}_{nowstr}.png"
+    htmlpath = f"{prefix}_{nowstr}.html"
+    driver.save_screenshot(sspath)
+    with open(htmlpath, "w", encoding="utf-8") as f:
+        f.write(driver.page_source)
+    print(f"Saved screenshot to {sspath} and HTML to {htmlpath}")
+
 
 @retry_step
 def go_to_hongkong(driver, wait):
@@ -247,7 +271,7 @@ def logout(driver, wait):
 
 def main():
     chrome_options = Options()
-    # chrome_options.add_argument("--headless")  # Enable if you do not want a UI
+    chrome_options.add_argument("--headless")  # Enable if you do not want a UI
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
