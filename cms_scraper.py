@@ -15,17 +15,17 @@ load_dotenv()
 
 import json
 import datetime
-import pytz  # make sure to pip install pytz
+import pytz
+import re
 from selenium.webdriver.common.action_chains import ActionChains
-# ============================ CONFIG =================================
 
+# ============================ CONFIG =================================
 LOGIN_URL = os.getenv("CMS_LOGIN_URL")
 ADMIN_URL = os.getenv("CMS_ADMIN_URL")
 USERNAME = os.getenv("CMS_USERNAME")
 PASSWORD = os.getenv("CMS_PASSWORD")
 
 # =================== RETRY LOGIC =====================================
-
 def retry_step(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -57,10 +57,8 @@ def login(driver, wait):
     driver.find_element(By.NAME, "password").send_keys(PASSWORD)
     driver.find_element(By.NAME, "submit").click()
     time.sleep(2)
-    # Confirm login
     if not driver.current_url.startswith(ADMIN_URL):
         raise Exception("Not redirected to admin page after login.")
-    # Check for login success
     span = wait.until(EC.presence_of_element_located((By.ID,"login-username")))
     if "Hello FB Autopost!" not in span.text:
         raise Exception("Did not see expected dashboard greeting.")
@@ -81,16 +79,15 @@ def go_to_facebook(driver, wait):
     print("✅ Arrived at Facebook feature page.")
 
 @retry_step
-def select_category(driver, wait, category_text="1594536350855514 - 巴士的娛圈事"):
+def select_category(driver, wait, category_text="巴士的娛圈事"):
     select_span = wait.until(EC.element_to_be_clickable((By.XPATH, '//span[contains(@class,"jcf-select")][not(contains(@class,"jcf-hidden"))]')))
     select_span.click()
     time.sleep(1)
     dropdown_option = None
-    for _ in range(8):  # Wait a bit for animation
+    for _ in range(8):
         try:
             dropdown_option = driver.find_element(
-                By.XPATH,
-                f'//span[contains(@class,"jcf-option") and contains(normalize-space(.),"{category_text}")]'
+                By.XPATH, f'//span[contains(@class,"jcf-option") and contains(normalize-space(.),"{category_text}")]'
             )
             break
         except NoSuchElementException:
@@ -100,39 +97,50 @@ def select_category(driver, wait, category_text="1594536350855514 - 巴士的娛
     sel_text = dropdown_option.text.strip()
     dropdown_option.click()
     time.sleep(1)
-    # Confirm it visually
     selected_value_element = wait.until(EC.presence_of_element_located((
         By.XPATH, '//span[contains(@class,"jcf-select")][not(contains(@class,"jcf-hidden"))]//span[contains(@class,"jcf-select-text")]//span'
     )))
     print(f"✅ Selected dropdown value: {selected_value_element.text.strip()}")
     print("✅ Selected dropdown value. Waiting 30 seconds for full post list to load...")
-    time.sleep(30)  # Wait 30 seconds for all posts to render
+    time.sleep(30)
     return sel_text
 
-# HK timezone object for conversion/handling
 HKT = pytz.timezone("Asia/Hong_Kong")
+TIME_RE = re.compile(r"\b\d{2}-\d{2} \d{2}:\d{2} (AM|PM)\b")
 
 def parse_hk_datetime(date_str, now_year):
-    """
-    Example: "08-01 04:20 PM" -> datetime.datetime(2025,8,1,16,20)
-    """
     try:
-        dt = datetime.datetime.strptime(date_str, "%m-%d %I:%M %p")  # no year
+        dt = datetime.datetime.strptime(date_str, "%m-%d %I:%M %p")
         full_dt = dt.replace(year=now_year)
         return HKT.localize(full_dt)
     except Exception as e:
         print("Failed to parse datetime:", date_str, e)
         return None
 
+def extract_time_text(li):
+    try:
+        time_elem = li.find_element(By.XPATH, './/div[contains(@class,"text-holder")]//span[last()]')
+        txt = (time_elem.get_attribute("textContent") or "").strip()
+        m = TIME_RE.search(txt)
+        if m:
+            return m.group(0)
+    except Exception:
+        pass
+    # Try all spans under text-holder
+    for s in li.find_elements(By.XPATH, './/div[contains(@class,"text-holder")]//span'):
+        txt = (s.get_attribute("textContent") or "").strip()
+        m = TIME_RE.search(txt)
+        if m:
+            return m.group(0)
+    return ""
+
 @retry_step
 def scroll_and_scrape_posts(driver, wait, max_hours=48, outfile="fb_posts.json"):
     print(f"==[ SCRAPING FB POSTS, WITHIN LAST {max_hours} HOURS ]==")
-    # Find the main container
     postlist_ul = wait.until(EC.presence_of_element_located((
         By.XPATH, '//ul[contains(@class,"fan-page-list")]'
     )))
 
-    # We'll keep all results in this list
     posts = []
     seen_post_ids = set()
     load_more = True
@@ -144,28 +152,36 @@ def scroll_and_scrape_posts(driver, wait, max_hours=48, outfile="fb_posts.json")
     min_time = now_hkt - datetime.timedelta(hours=max_hours)
     print(f"Scrape window: {min_time} -> {now_hkt}")
 
+    consecutive_no_growth = 0
+    last_li_count = 0
+
     while load_more:
-        # Get all <li class="fan-page-card ..."> under the UL
         li_elems = postlist_ul.find_elements(By.XPATH, './li[contains(@class,"fan-page-card")]')
         new_count = 0
         for li in li_elems:
             try:
-                # title and URL
+                # Ensure card is visible for JS-populated fields
+                driver.execute_script("arguments[0].scrollIntoView({block:'center'})", li)
+                for _ in range(8):
+                    update_time_str = extract_time_text(li)
+                    if update_time_str:
+                        break
+                    time.sleep(0.25)
+                if not update_time_str:
+                    continue
+
                 title_elem = li.find_element(By.XPATH, './/div[contains(@class,"text-holder")]/p')
                 title_text = title_elem.text.strip()
-                # time
-                time_elem = li.find_element(By.XPATH, './/div[contains(@class,"text-holder")]/span')
-                update_time_str = time_elem.text.strip()  # e.g. "08-01 04:20 PM"
-                # build dt
+
                 post_dt = parse_hk_datetime(update_time_str, now_hkt.year)
                 if not post_dt:
                     continue
                 # Stop if posts are older than threshold
                 if post_dt < min_time:
                     load_more = False
-                    print(f"Post earlier than 48h: {title_text} ({update_time_str})")
+                    print(f"Post earlier than window: {title_text} ({update_time_str})")
                     break
-                # Status counts
+
                 footer_elem = li.find_element(By.XPATH, './/div[contains(@class,"post-footer-icons")]')
                 reached_num = None
                 engaged_num = None
@@ -176,7 +192,6 @@ def scroll_and_scrape_posts(driver, wait, max_hours=48, outfile="fb_posts.json")
                         reached_num = int(val_txt) if val_txt.isdigit() else val_txt
                     if lab == "engaged":
                         engaged_num = int(val_txt) if val_txt.isdigit() else val_txt
-                # Compose post object
                 postid = li.get_attribute('data-postid') or hash(title_text + update_time_str)
                 if postid in seen_post_ids:
                     continue
@@ -192,22 +207,28 @@ def scroll_and_scrape_posts(driver, wait, max_hours=48, outfile="fb_posts.json")
                 new_count += 1
             except Exception as e:
                 continue
+
+        # If hit threshold, finish
         if not load_more:
             break
-        # Don't scroll if last run added no new
-        if new_count == 0 and not first_run:
-            print("No more new posts loaded on scroll. Ending scrape.")
+
+        # Heuristic: keep scrolling while new cards are loaded AND we have not seen a post older than the threshold
+        if len(li_elems) == last_li_count:
+            consecutive_no_growth += 1
+        else:
+            consecutive_no_growth = 0
+        last_li_count = len(li_elems)
+        if consecutive_no_growth >= 2:
+            print("No more new posts after two scroll attempts. Ending scrape.")
             break
+
         first_run = False
-        # Scroll to bottom (of UL box), which loads more via infinite scroll
         driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", postlist_ul)
         time.sleep(1.5)
 
-    # SAVE TO JSON
     with open(outfile, "w", encoding='utf-8') as f:
         json.dump(posts, f, ensure_ascii=False, indent=2)
     print(f"Saved {len(posts)} posts to {outfile}")
-
     return posts
 
 @retry_step
@@ -223,13 +244,10 @@ def logout(driver, wait):
         print("✅ Logout successful.")
     except Exception as e:
         print("⚠️ Logout failed or already logged out:", e)
-        # No raise: safe quit
-
-# ============ MAIN CONTROLLER ========================================
 
 def main():
     chrome_options = Options()
-    chrome_options.add_argument("--headless")  # Enable if you do not want a UI
+    # chrome_options.add_argument("--headless")  # Enable if you do not want a UI
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")

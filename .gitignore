@@ -3,3 +3,5 @@ keyword_scrape.py
 .github/workflows/keywordScrape.yml
 app.py
 fb_posts_last48h.json
+*.png
+*.json
