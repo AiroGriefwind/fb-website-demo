@@ -19,12 +19,15 @@ import pytz
 import re
 from selenium.webdriver.common.action_chains import ActionChains
 
+from firebase_utils import init_firebase, save_json_to_firebase
+
 # ============================ CONFIG =================================
 LOGIN_URL = os.getenv("CMS_LOGIN_URL")
 ADMIN_URL = os.getenv("CMS_ADMIN_URL")
 USERNAME = os.getenv("CMS_USERNAME")
 PASSWORD = os.getenv("CMS_PASSWORD")
 
+init_firebase()
 # =================== RETRY LOGIC =====================================
 def retry_step(func):
     @wraps(func)
@@ -253,6 +256,9 @@ def scroll_and_scrape_posts(driver, wait, max_hours=48, outfile="fb_posts.json")
     with open(outfile, "w", encoding='utf-8') as f:
         json.dump(posts, f, ensure_ascii=False, indent=2)
     print(f"Saved {len(posts)} posts to {outfile}")
+
+    # Also save to Firebase
+    save_json_to_firebase("/fb_scraped_posts", posts)
     return posts
 
 @retry_step
