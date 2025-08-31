@@ -6,3 +6,4 @@ fb_posts_last48h.json
 *.png
 *.json
 *.html
+*.pyc
