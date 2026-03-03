@@ -1,9 +1,17 @@
-keyword_scrape.py
 .env
-.github/workflows/keywordScrape.yml
-app.py
-fb_posts_last48h.json
-*.png
-*.json
-*.html
+__pycache__/
 *.pyc
+
+# Runtime outputs
+artifacts/screenshots/*.png
+artifacts/html_dumps/*.html
+data/runtime/*.json
+
+# Secrets
+configs/secrets/serviceAccountKey.json
+client_secret.json
+token.json
+
+# Keep sample and template JSON under version control
+!data/samples/*.json
+!configs/**/*.example.json
