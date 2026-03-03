@@ -1,0 +1,4 @@
+# Example cron for VM (UTC)
+# m h dom mon dow command
+*/30 * * * * cd /opt/bp-cms-scraper && /usr/bin/python3 cms_scraper.py >> /opt/bp-cms-scraper/artifacts/runtime.log 2>&1
+

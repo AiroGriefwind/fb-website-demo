@@ -1,13 +1,8 @@
-from src.scraper.cms_scraper import main
-
-
-if __name__ == "__main__":
-    main()
-
 import os
 import tempfile
 import time
 import traceback
+from pathlib import Path
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
@@ -26,7 +21,7 @@ import pytz
 import re
 from selenium.webdriver.common.action_chains import ActionChains
 
-from firebase_utils import init_firebase, save_json_to_firebase
+from src.common.firebase_utils import init_firebase, save_json_to_firebase
 
 # ============================ CONFIG =================================
 print("ENV CHECK >>>")
@@ -97,9 +92,13 @@ def login(driver, wait):
 def dump_html_and_screenshot(driver, prefix="login_fail"):
     import datetime
     nowstr = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    sspath = f"{prefix}_{nowstr}.png"
-    htmlpath = f"{prefix}_{nowstr}.html"
-    driver.save_screenshot(sspath)
+    screenshot_dir = Path("artifacts/screenshots")
+    html_dir = Path("artifacts/html_dumps")
+    screenshot_dir.mkdir(parents=True, exist_ok=True)
+    html_dir.mkdir(parents=True, exist_ok=True)
+    sspath = screenshot_dir / f"{prefix}_{nowstr}.png"
+    htmlpath = html_dir / f"{prefix}_{nowstr}.html"
+    driver.save_screenshot(str(sspath))
     with open(htmlpath, "w", encoding="utf-8") as f:
         f.write(driver.page_source)
     print(f"Saved screenshot to {sspath} and HTML to {htmlpath}")
@@ -176,7 +175,7 @@ def extract_time_text(li):
     return ""
 
 @retry_step
-def scroll_and_scrape_posts(driver, wait, max_hours=48, outfile="fb_posts.json"):
+def scroll_and_scrape_posts(driver, wait, max_hours=48, outfile="data/runtime/fb_posts.json"):
     print(f"==[ SCRAPING FB POSTS, WITHIN LAST {max_hours} HOURS ]==")
     postlist_ul = wait.until(EC.presence_of_element_located((
         By.XPATH, '//ul[contains(@class,"fan-page-list")]'
@@ -267,9 +266,11 @@ def scroll_and_scrape_posts(driver, wait, max_hours=48, outfile="fb_posts.json")
         driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", postlist_ul)
         time.sleep(1.5)
 
-    with open(outfile, "w", encoding='utf-8') as f:
+    outfile_path = Path(outfile)
+    outfile_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(outfile_path, "w", encoding='utf-8') as f:
         json.dump(posts, f, ensure_ascii=False, indent=2)
-    print(f"Saved {len(posts)} posts to {outfile}")
+    print(f"Saved {len(posts)} posts to {outfile_path}")
 
     # Also save to Firebase
     save_json_to_firebase("/fb_scraped_posts", posts)
@@ -319,7 +320,7 @@ def main():
         print("==[ STEP: SELECT CATEGORY ]==")
         select_category(driver, wait)
         print("==[ STEP: SCRAPE POSTS ]==")
-        scroll_and_scrape_posts(driver, wait, max_hours=48, outfile="fb_posts_last48h.json")
+        scroll_and_scrape_posts(driver, wait, max_hours=48, outfile="data/runtime/fb_posts_last48h.json")
         print("==[ SCRAPE FINISHED ]==")
 
     except Exception as e:
