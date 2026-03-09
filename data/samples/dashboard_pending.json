@@ -1,0 +1,86 @@
+[
+  {
+    "item_id": "pending-001",
+    "run_id": "demo-20260309",
+    "category": "娛樂",
+    "title": "油價再升引發市民關注，交通成本壓力持續",
+    "thumbnail": "data/samples/Dummy1.png",
+    "Post URL": "https://example.com/posts?id=330001",
+    "publish_time": "2026-03-10T08:00:00Z",
+    "popular_count": 2,
+    "review_status": "waiting",
+    "updated_at": "2026-03-09T12:00:00Z"
+  },
+  {
+    "item_id": "pending-002",
+    "run_id": "demo-20260309",
+    "category": "社會事",
+    "title": "中國女足熱度上升，球迷討論度明顯增加",
+    "thumbnail": "data/samples/Dummy1.png",
+    "Post URL": "https://example.com/posts?id=330002",
+    "publish_time": "2026-03-10T09:00:00Z",
+    "popular_count": 1,
+    "review_status": "waiting",
+    "updated_at": "2026-03-09T12:00:00Z"
+  },
+  {
+    "item_id": "pending-003",
+    "run_id": "demo-20260309",
+    "category": "大視野",
+    "title": "openclaw 事件延燒，全球科技圈高度關注",
+    "thumbnail": "data/samples/Dummy1.png",
+    "Post URL": "https://example.com/posts?id=330003",
+    "publish_time": "2026-03-10T10:00:00Z",
+    "popular_count": 2,
+    "review_status": "waiting",
+    "updated_at": "2026-03-09T12:00:00Z"
+  },
+  {
+    "item_id": "pending-004",
+    "run_id": "demo-20260309",
+    "category": "兩岸",
+    "title": "兩岸旅遊政策新動向，業界預期客流回升",
+    "thumbnail": "data/samples/Dummy1.png",
+    "Post URL": "https://example.com/posts?id=330004",
+    "publish_time": "2026-03-10T11:00:00Z",
+    "popular_count": 1,
+    "review_status": "waiting",
+    "updated_at": "2026-03-09T12:00:00Z"
+  },
+  {
+    "item_id": "pending-005",
+    "run_id": "demo-20260309",
+    "category": "法庭事",
+    "title": "地方法院新判例引發法律界討論",
+    "thumbnail": "data/samples/Dummy1.png",
+    "Post URL": "https://example.com/posts?id=330005",
+    "publish_time": "2026-03-10T12:00:00Z",
+    "popular_count": 1,
+    "review_status": "waiting",
+    "updated_at": "2026-03-09T12:00:00Z"
+  },
+  {
+    "item_id": "pending-006",
+    "run_id": "demo-20260309",
+    "category": "消費",
+    "title": "春季消費券話題再起，零售業盼刺激市場",
+    "thumbnail": "data/samples/Dummy1.png",
+    "Post URL": "https://example.com/posts?id=330006",
+    "publish_time": "2026-03-10T13:00:00Z",
+    "popular_count": 2,
+    "review_status": "waiting",
+    "updated_at": "2026-03-09T12:00:00Z"
+  },
+  {
+    "item_id": "pending-007",
+    "run_id": "demo-20260309",
+    "category": "心韓",
+    "title": "韓流歌手新作上線，社媒互動量快速攀升",
+    "thumbnail": "data/samples/Dummy1.png",
+    "Post URL": "https://example.com/posts?id=330007",
+    "publish_time": "2026-03-10T14:00:00Z",
+    "popular_count": 3,
+    "review_status": "waiting",
+    "updated_at": "2026-03-09T12:00:00Z"
+  }
+]

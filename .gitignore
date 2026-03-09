@@ -15,3 +15,4 @@ token.json
 # Keep sample and template JSON under version control
 !data/samples/*.json
 !configs/**/*.example.json
+data/runtime/review_events.jsonl

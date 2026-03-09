@@ -1,0 +1,23 @@
+[
+  {
+    "title": "香港春季戶外活動推薦",
+    "thumbnail": "data/samples/Dummy1.png",
+    "Post URL": "https://example.com/posts?id=223401",
+    "publish_time": "2026-03-10T01:30:00Z",
+    "popular_count": 2
+  },
+  {
+    "title": "2026 智能手机趋势观察",
+    "thumbnail": "data/samples/Dummy1.png",
+    "Post URL": "https://example.com/posts?id=223402",
+    "publish_time": "2026-03-10T03:00:00Z",
+    "popular_count": 1
+  },
+  {
+    "title": "职场效率工具 Top 10",
+    "thumbnail": "data/samples/Dummy1.png",
+    "Post URL": "https://example.com/posts?id=223403",
+    "publish_time": "2026-03-10T05:30:00Z",
+    "popular_count": 3
+  }
+]
