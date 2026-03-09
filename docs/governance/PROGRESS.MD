@@ -241,3 +241,40 @@
 
 下一步:
 - 创建新的 GitHub public demo 仓库并推送当前版本，供同事线上预览。
+
+日期时间(HKT): 2026-03-09
+负责人/LLM: gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops
+完成内容:
+- 优化周视图在移动端的展示策略：不再压缩卡片比例，改为横向可滚动容器承载 7 天列。
+- 宽屏继续完整展示 7 天；窄屏时保持卡片宽度下限并启用左右滑动查看不同日期列。
+- 增加滚动条样式与提示文案（小屏设备可左右滑动查看整周）。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 无新增问题。
+
+风险/阻塞:
+- 不同手机浏览器对滚动条可见性策略不同，个别机型可能仅显示手势滑动、不显示明显滚动条。
+
+下一步:
+- 根据同事手机实测反馈微调日列最小宽度与卡片密度。
+
+日期时间(HKT): 2026-03-09
+负责人/LLM: gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops
+完成内容:
+- 扩充 `data/samples/dashboard_published.json` 与 `data/samples/dashboard_scheduled.json`：新增 `category` 字段，并按 3月9日/3月10日、每类每天3篇生成样本（每个文件 42 篇）。
+- 在 `已發佈` 与 `已排程` 周视图中新增 `分類篩選` 多选框，位置在日期区间 UI 下方，可按一个或多个分类过滤贴文。
+- 分类选项与 `待排程` 维持一致（娛樂/社會事/大視野/兩岸/法庭事/消費/心韓），并保留未分类兜底。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 无新增问题。
+- 样本数据文件检查通过：两份数据均包含 `category` 且数量满足要求。
+
+风险/阻塞:
+- 当前分类筛选默认全选；若用户手动清空所有选项，页面会回退展示全部分类（可按后续反馈调整为“显示空结果”）。
+
+下一步:
+- 将本次更新推送到 `fb-website-demo` 仓库，供线上继续验收。

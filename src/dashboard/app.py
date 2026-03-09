@@ -351,8 +351,27 @@ def _render_week_view(items: list[dict[str, Any]], key_prefix: str, empty_text: 
             st.session_state[state_key] += 1
             st.rerun()
 
+    item_categories = {str(item.get("category", "未分類")) for item in items}
+    ordered_categories = [x for x in CATEGORY_ORDER if x in item_categories]
+    all_categories = ordered_categories + sorted(x for x in item_categories if x not in ordered_categories)
+    filter_key = f"{key_prefix}_selected_categories"
+    if filter_key not in st.session_state or not st.session_state.get(filter_key):
+        st.session_state[filter_key] = all_categories.copy()
+
+    selected_categories = st.multiselect(
+        "分類篩選",
+        options=all_categories,
+        default=st.session_state.get(filter_key, all_categories),
+        key=filter_key,
+        help="可选择一个或多个分类，仅显示对应贴文。",
+    )
+    active_categories = set(selected_categories or [])
+
     day_posts: dict[int, list[tuple[datetime, dict[str, Any]]]] = {i: [] for i in range(7)}
     for item in items:
+        item_category = str(item.get("category", "未分類"))
+        if active_categories and item_category not in active_categories:
+            continue
         dt = _parse_publish_time(str(item.get("publish_time", "")))
         if dt is None:
             continue
@@ -368,8 +387,25 @@ def _render_week_view(items: list[dict[str, Any]], key_prefix: str, empty_text: 
     weekday_labels = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
     board_html = """
     <style>
-    .week-board { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; align-items: start; }
-    .day-col { min-width: 0; }
+    .week-scroll {
+        width: 100%;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding-bottom: 6px;
+    }
+    .week-scroll::-webkit-scrollbar { height: 8px; }
+    .week-scroll::-webkit-scrollbar-thumb { background: #b9b9dc; border-radius: 999px; }
+    .week-scroll::-webkit-scrollbar-track { background: #ececf8; border-radius: 999px; }
+    .week-board {
+        --day-col-min: 165px;
+        display: grid;
+        grid-template-columns: repeat(7, minmax(var(--day-col-min), 1fr));
+        min-width: calc(7 * var(--day-col-min) + 6 * 10px);
+        gap: 10px;
+        align-items: start;
+    }
+    .day-col { min-width: var(--day-col-min); scroll-snap-align: start; }
+    .week-scroll { scroll-snap-type: x proximity; }
     .day-head { text-align: center; font-size: 13px; color: #444; font-weight: 600; margin-bottom: 8px; padding: 6px 2px; }
     .post-stack { display: flex; flex-direction: column; gap: 6px; }
     .day-empty { font-size: 12px; color: #8b8b98; text-align: center; padding: 8px 0; }
@@ -396,7 +432,8 @@ def _render_week_view(items: list[dict[str, Any]], key_prefix: str, empty_text: 
     .post-title { font-size: 12px; line-height: 1.35; padding: 6px 8px 8px 8px; color: #222; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; min-height: 34px; }
     </style>
     """
-    board_html += '<div class="week-board">'
+    st.caption("小屏设备可左右滑动查看整周。")
+    board_html += '<div class="week-scroll"><div class="week-board">'
     for day_idx, day in enumerate(week_days):
         cards = day_posts.get(day_idx, [])
         board_html += (
@@ -423,7 +460,7 @@ def _render_week_view(items: list[dict[str, Any]], key_prefix: str, empty_text: 
                 "</a>"
             )
         board_html += "</div></div>"
-    board_html += "</div>"
+    board_html += "</div></div>"
     st.markdown(board_html, unsafe_allow_html=True)
 
 
