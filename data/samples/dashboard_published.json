@@ -1,0 +1,23 @@
+[
+  {
+    "title": "Introduction to Modern Web Development",
+    "thumbnail": "data/samples/Dummy1.png",
+    "Post URL": "https://example.com/posts?id=123456",
+    "publish_time": "2026-03-05T10:30:00Z",
+    "popular_count": 2
+  },
+  {
+    "title": "AI Trends in 2026",
+    "thumbnail": "data/samples/Dummy1.png",
+    "Post URL": "https://example.com/posts?id=123457",
+    "publish_time": "2026-03-04T15:20:00Z",
+    "popular_count": 1
+  },
+  {
+    "title": "Mastering React in 30 Minutes",
+    "thumbnail": "data/samples/Dummy1.png",
+    "Post URL": "https://example.com/posts?id=123458",
+    "publish_time": "2026-03-03T08:45:00Z",
+    "popular_count": 3
+  }
+]
