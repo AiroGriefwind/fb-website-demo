@@ -4,6 +4,14 @@
 - 每次推进后追加一条，不覆盖历史。
 - 记录必须包含：时间、分支/worktree、完成项、验证、风险、下一步。
 
+## 跨仓库记录约定（Demo 阶段）
+- 本仓库仍是 `BP-CMS-Scraper` 项目治理与主线追踪的记录面板；外部 demo 仓库用于短期演示迭代与高频发布。
+- Demo 阶段若主要改动发生在外部仓库，也必须在本文件追加记录，明确“改动发生地”和“影响范围”。
+- `分支/worktree` 字段统一写法：`本仓库分支 | demo仓库:<repo>/<branch>@<commit或tag>`。
+- `完成内容` 至少包含两类标记之一：`[本仓库]`、`[demo仓库]`，避免后续误判代码已在本仓库落地。
+- 未回迁前，禁止在本文件将 demo 仓库改动描述为“本仓库已实现”；只能写“已在 demo 仓库验证”。
+- 回迁发生时，必须单独追加一条“回迁记录”，写清来源 commit/tag、回迁范围、差异处理与验证结论。
+
 ## 记录模板
 ```text
 日期时间(HKT):
@@ -278,3 +286,281 @@
 
 下一步:
 - 将本次更新推送到 `fb-website-demo` 仓库，供线上继续验收。
+
+日期时间(HKT): 2026-03-11
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: main（本仓库治理） | demo仓库: AiroGriefwind/fb-website-demo/main@877aec634ecf4bf8998a5131dc9d2a341aebaff2
+完成内容:
+- [治理] 明确 Demo 阶段策略：短期以外部 demo 仓库作为主要 push 目的地，本仓库持续承担 BP-CMS-Scraper 主线治理与进度归档。
+- [治理] 新增跨仓库记录约定，要求后续每次演示迭代都在本文件追加映射记录，避免未来合并时混淆“已演示”与“已回迁”。
+- [计划] 回迁动作延期到 demo 阶段结束后（客户验收、仓库转 private、交付部署包）再评估执行。
+
+验证结果:
+- 文档规则已落地：后续可通过统一 `分支/worktree` 模式和 `[本仓库]/[demo仓库]` 标记追溯改动归属。
+
+风险/阻塞:
+- 若 demo 仓库未持续填写 commit/tag 映射，本仓库将丢失可审计的版本对应关系。
+- demo 仓库与本仓库长期并行可能导致实现漂移，需在回迁前安排一次差异盘点。
+
+下一步:
+- 从下一次 demo 提交开始，在本文件记录 demo 仓库 `repo/branch/commit(tag)` 映射。
+- demo 阶段结束后追加“回迁决策记录”（回迁/不回迁/部分回迁）并给出执行窗口。
+
+日期时间(HKT): 2026-03-11
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（治理记录） | demo仓库: AiroGriefwind/fb-website-demo/main@877aec634ecf4bf8998a5131dc9d2a341aebaff2
+完成内容:
+- [demo仓库] 补齐 demo 仓库地址与建仓后关键提交映射：`https://github.com/AiroGriefwind/fb-website-demo`。
+- [demo仓库] `1462afc`：`feature/bot-ui-ops: streamlit demo UI polish and sample data`。
+- [demo仓库] `d3d900c`：`chore: remove cms_scraper.py from public demo repo`。
+- [demo仓库] `877aec634ecf4bf8998a5131dc9d2a341aebaff2`：`feature/bot-ui-ops: add category filter and expand published/scheduled samples`。
+
+验证结果:
+- 本仓库治理文档中的 demo 映射信息已可直接定位到仓库、分支与关键 commit，便于后续回迁/审计。
+
+风险/阻塞:
+- 若后续只记录短 hash 且提交增多，可能出现前缀冲突；需至少保证唯一前缀长度（建议 10-12 位）。
+
+下一步:
+- 后续每次 demo push 后追加一条映射记录（建议包含 `repo/branch/commit` 与 1 行变更摘要）。
+- demo 阶段结束时新增“回迁决策记录”并标注是否对齐到本仓库对应 commit。
+
+日期时间(HKT): 2026-03-11
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@877aec634ecf4bf8998a5131dc9d2a341aebaff2
+完成内容:
+- [本仓库] `src/dashboard/app.py` 改为单页九列视图，移除 `已發佈/已排程/待排程` Tab 与“往前七天/往后七天”周导航。
+- [本仓库] 删除待排程审核流相关函数与侧边栏“重置待排程（樣本）”按钮，仅保留 Telegram 设置、token 验证与测试消息发送。
+- [本仓库] 新增横向滚动九列布局并冻结前两列（已發佈/已排程）；第3~9列固定为 `社會事/大視野/兩岸/法庭事/消費/娛樂/心韓`，列头增加小字“已出未排”。
+- [本仓库] 按 HKT 实现时间窗口与排序：已發佈=过去24小时降序、已排程=未来24小时升序、第3~9列=过去24小时降序。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 无新增问题。
+
+风险/阻塞:
+- `position: sticky` 在不同浏览器与容器组合下表现可能略有差异，需在目标演示环境实测冻结列效果。
+- 当前第3~9列采用 pending 样本数据，若后端字段变动需同步调整映射。
+
+下一步:
+- 在 demo 仓库同步本次 UI 改造并记录新的 commit 映射（repo/branch/commit）。
+- 根据客户反馈继续微调列宽、卡片密度与移动端可读性。
+
+日期时间(HKT): 2026-03-12
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@<待填新commit>
+完成内容:
+- [本仓库] 更新 `data/samples/dashboard_published.json`、`data/samples/dashboard_scheduled.json`、`data/samples/dashboard_pending.json` 为 3/12 演示样本；第3~9列分类（社會事/大視野/兩岸/法庭事/消費/娛樂/心韓）均至少 3 条，且满足当前过去24小时展示窗口。
+- [本仓库] 强化冻结列视觉隔离：前两列 sticky 区增加磨砂背景（`backdrop-filter`）与阴影分隔；在不支持磨砂时回退到主题背景，降低滚动时透底和误触。
+- [本仓库] 侧边栏 Google Trends 接入 `https://trends.google.com/trending/rss?geo=HK`，增加 RSS 解析与缓存自动刷新（TTL=900s）；异常时回退本地 mock 数据。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 与样本 JSON 文件无新增问题。
+- pending 样本检查通过：7 个目标分类均为 3 条记录。
+
+风险/阻塞:
+- RSS 源可用性受网络与上游服务影响，短时异常会触发 fallback（已兜底）。
+- 不同浏览器对 `backdrop-filter` 支持差异仍可能导致视觉细节不同，但不影响可用性。
+
+下一步:
+- 在 demo 仓库提交本次更新并补写实际 commit 映射（替换 `<待填新commit>`）。
+- 客户实测后按反馈微调冻结列背景透明度与阴影强度。
+
+日期时间(HKT): 2026-03-12
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@<待填新commit>
+完成内容:
+- [本仓库] 继续修复冻结区穿透问题：将前两列 sticky 改为“列级磨砂遮罩层（`::before`）+ 列间缝隙补层（`::after`）”的组合方案。
+- [本仓库] 遮罩覆盖范围从列卡片扩展到整列与顶部标题区，减少横向滚动时第3列及之后内容在前两列区域可见/可点击的问题。
+- [本仓库] 保留磨砂实现并强化参数（`saturate + blur`）；同时保留 `@supports` 回退与 dark/light 自适应背景，避免不支持环境下样式失效。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 无新增问题。
+
+风险/阻塞:
+- `backdrop-filter` 仍受浏览器内核与硬件加速策略影响，不同设备上的磨砂观感可能有差异。
+
+下一步:
+- 在目标演示浏览器实测“冻结区可见性 + 点击命中”行为；如仍有穿透，再补一层冻结总面板遮罩（覆盖前两列总宽）。
+- 同步 demo 仓库并回写 commit 映射。
+
+日期时间(HKT): 2026-03-12
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@<待填新commit>
+完成内容:
+- [本仓库] 侧边栏 Google Trends 文案调整为两行：第一行“数据源：Google Trends RSS”（可点击跳转 Trends 页面），第二行“刷新时间：mm-dd hh:mm”并使用更小字号与弱化颜色。
+- [本仓库] 趋势卡片主行改为仅展示“关键词（左）+ 搜索量（右）”，将时间移入详情区，避免主行信息拥挤导致显示不全。
+- [本仓库] 接入 RSS 可用明细字段展示：展开后显示开始时间与最多 3 条 `ht:news_item` 细分信息（标题/来源/链接）；折线图字段在 RSS 中不可得，明确提示已略过。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 无新增问题。
+
+风险/阻塞:
+- Streamlit 原生组件不易实现“点击卡片任意空白处展开 + 点击页面任意处自动收起”的前端级事件捕获；当前采用“展开详情/收起详情 + 单条展开状态”方案。
+
+下一步:
+- 若你确认要严格实现“点击卡片区域即展开、点击空白即收起”，下个迭代可改为自定义前端组件（streamlit-component）处理点击事件。
+- 同步 demo 仓库并回写新 commit 映射。
+
+日期时间(HKT): 2026-03-12
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@<待填新commit>
+完成内容:
+- [本仓库] 将侧边栏趋势区改为内嵌 HTML/CSS/JS 交互面板（`streamlit.components.v1.html`），实现“整卡点击展开、点击其他区域收起”的单选展开行为，样式更贴近 Google Trends。
+- [本仓库] 数据源文案调整为两行：第一行“数据源：Google Trends RSS”（可点击链接到 Trends 页面），第二行“刷新时间：mm-dd hh:mm”（小字号弱化显示）。
+- [本仓库] 卡片主行改为仅显示“关键词（左）+ 搜索量（右）”；展开后展示开始时间与 RSS 可用的 `news_item` 细分条目；折线图字段因 RSS 不提供，保留提示说明。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 无新增问题。
+
+风险/阻塞:
+- 该交互面板运行在 iframe 内，视觉和事件可控性明显提高，但与 Streamlit 原生组件的主题变量并非完全同步。
+
+下一步:
+- 在目标演示环境确认暗色主题下的色值观感，必要时微调卡片背景与文字对比度。
+- 同步 demo 仓库并回写新 commit 映射。
+
+日期时间(HKT): 2026-03-12
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@<待填新commit>
+完成内容:
+- [本仓库] 修复 `streamlit run src/dashboard/app.py` 启动时报错 `NameError: name 'source' is not defined`。
+- [本仓库] 根因是 `_render_trends_widget` 的内嵌 JS 模板位于 Python f-string 中，`(${source})` 未做花括号转义；已改为 `(${{source}})`。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 无新增问题。
+
+风险/阻塞:
+- 内嵌 JS 模板后续若继续扩展，需注意 Python f-string 与 JS 模板语法的花括号转义冲突。
+
+下一步:
+- 重启 Streamlit 并复测侧边栏趋势卡片交互（展开/收起、链接跳转、明细展示）。
+
+日期时间(HKT): 2026-03-12
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@<待填新commit>
+完成内容:
+- [本仓库] 按最新 UI 反馈调整侧边栏趋势区：移除“趋势折线图”提示文案，仅保留开始时间与趋势细分明细。
+- [本仓库] 将趋势区标题并入内嵌面板，与“数据源/刷新时间”左对齐；两行元信息统一为更小字号与弱化颜色。
+- [本仓库] 视觉重构：侧边栏整体改为磨砂背景并移除原黑底感；趋势容器同步使用磨砂底，卡片底色提亮以拉开层次。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 无新增问题。
+
+风险/阻塞:
+- 侧边栏与内嵌 iframe 的磨砂效果受浏览器/硬件加速支持影响，少数环境可能退化为实色背景（已设置 fallback）。
+
+下一步:
+- 在目标设备复测明暗主题下对比度与可读性；如需可继续微调卡片亮度和边框强度。
+
+日期时间(HKT): 2026-03-12
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@<待填新commit>
+完成内容:
+- [本仓库] 调整趋势区布局与交互：将“数据源/刷新时间”移动到第10条后方底部小字区域；标题下改为排序图标入口（支持按开始时间/搜索量排序）。
+- [本仓库] 排序逻辑与卡片右侧显示联动：按开始时间排序时右侧显示发布时间；按搜索量排序时右侧显示搜索量；展开后展示开始时间、搜索量与趋势细分。
+- [本仓库] 新增居中圆形刷新按钮（图标），点击后强制重新拉取 RSS、更新本地趋势样本文件并刷新 UI。
+- [本仓库] 继续优化视觉：侧边栏与趋势容器磨砂覆盖增强，卡片底色提亮，减轻滚动到底部时黑底突兀感。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 无新增问题。
+
+风险/阻塞:
+- 侧边栏磨砂与 iframe 背景融合仍受浏览器渲染策略影响，个别设备可能出现轻微色差。
+
+下一步:
+- 在客户常用设备复测“排序切换 + 刷新按钮 + 展开收起”体验，必要时再细调高度与间距。
+
+日期时间(HKT): 2026-03-12
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@<待填新commit>
+完成内容:
+- [本仓库] 修复趋势区底部黑区残留：内嵌趋势面板改为 JS 自动上报 frame 高度（`streamlit:setFrameHeight`），随展开/收起动态调整，减少固定高度留白。
+- [本仓库] 刷新按钮位置调整为紧贴列表底部（第10条后），保持居中圆形图标样式。
+- [本仓库] 重做排序控件：去掉溢出感较强的 popover 触发器，改为“排序方式”小标签 + 简洁下拉选择（开始时间/搜索量）。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 无新增问题。
+
+风险/阻塞:
+- `setFrameHeight` 依赖 Streamlit 前端消息机制，若后续 Streamlit 大版本行为变化，可能需要小幅调整事件触发时机。
+
+下一步:
+- 让用户复测不同窗口尺寸下的趋势区高度与按钮位置；若仍有空白，可在面板底部再加最小高度约束微调。
+
+日期时间(HKT): 2026-03-12
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@<待填新commit>
+完成内容:
+- [本仓库] 修正趋势区“只显示一小节”问题：将内嵌趋势面板恢复为可视高度（560）并启用滚动，避免内容被裁切。
+- [本仓库] 排序区改为同一行布局：左侧仅显示 `⇅` 图标，右侧显示下拉菜单（开始时间/搜索量），去掉“排序方式”文案。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 无新增问题。
+
+风险/阻塞:
+- 当前趋势区高度为固定值与滚动组合，极端小屏设备上仍可能需要后续再做分辨率自适应微调。
+
+下一步:
+- 用户复测手机/桌面布局；若仍有局部遮挡，再按设备断点调整趋势区高度和卡片间距。
+
+日期时间(HKT): 2026-03-12
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@<待填新commit>
+完成内容:
+- [本仓库] 优化趋势卡片展开信息顺序：展开后顶部先显示“完整趋势词（加粗）”，再展示开始时间、搜索量与趋势细分明细。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 无新增问题。
+
+风险/阻塞:
+- 无新增阻塞。
+
+下一步:
+- 用户继续验收趋势区交互与视觉细节，按反馈做最后一轮样式收口。
+
+日期时间(HKT): 2026-03-12
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@<待填新commit>
+完成内容:
+- [本仓库] 反转主面板分类筛选作用范围：`分類篩選` 仅作用于前两列（`已發佈`/`已排程`），不再影响第3~9列。
+- [本仓库] 调整筛选候选来源为前两列数据集（published + scheduled），并同步更新筛选说明文案。
+- [本仓库] 第3~9列（已出未排）恢复为固定按分类与时间展示，不受筛选项变化影响。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 无新增问题。
+
+风险/阻塞:
+- 若后续前两列与后七列分类枚举不一致，筛选器候选可能少于后七列展示分类（当前符合预期）。
+
+下一步:
+- 用户复测筛选交互：确认前两列随筛选变化、后七列保持不变。
+
+日期时间(HKT): 2026-03-12
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@<待填本次commit>
+完成内容:
+- [本仓库] 完成 demo UI 收口：九列主面板交互稳定，冻结列遮罩、筛选作用范围（仅前两列）与排序行为已按验收反馈落地。
+- [本仓库] 完成趋势区改造：接入 RSS 自动更新、整卡展开/收起、排序切换、底部元信息与图标刷新按钮交互。
+- [数据] 更新 3/12 演示样本数据（published/scheduled/pending/trends），保证演示可用性与时间窗口一致性。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 与治理文档无新增问题。
+
+风险/阻塞:
+- 趋势区 iframe 在极端小屏下仍可能需要进一步压缩行高与边距。
+
+下一步:
+- 推送本次改动到 demo 仓库并回填实际 commit hash。
