@@ -46,6 +46,10 @@
 目标：Telegram 审核流 + Streamlit 控制台。
 重点目录：src/bot、src/dashboard
 验收：可完成待审->通过/否决->状态回写全流程。
+Demo 阶段补充：
+- 外部 demo 仓库可作为短期主要 push 目的地（用于客户演示与快速迭代）。
+- 本仓库仍保留治理与主线进度职责；每次 demo 迭代必须回写 docs/governance/PROGRESS.MD 做映射记录。
+- 未明确回迁前，不得将 demo 仓库改动表述为“本仓库已落地”。
 ```
 
 ### feature/infra-observability
