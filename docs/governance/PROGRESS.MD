@@ -549,7 +549,7 @@
 
 日期时间(HKT): 2026-03-12
 负责人/LLM: wangz / gpt-5.3-codex
-分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@<待填本次commit>
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@0c4c03c47b3f9cc5f1e5b0a26d3ac430d2ea57ed
 完成内容:
 - [本仓库] 完成 demo UI 收口：九列主面板交互稳定，冻结列遮罩、筛选作用范围（仅前两列）与排序行为已按验收反馈落地。
 - [本仓库] 完成趋势区改造：接入 RSS 自动更新、整卡展开/收起、排序切换、底部元信息与图标刷新按钮交互。
