@@ -636,13 +636,34 @@ def _collect_time_sorted_items(items: list[dict[str, Any]]) -> list[tuple[dateti
     return collected
 
 
-def _build_column_html(column_title: str, cards_html: list[str], subtitle: str = "", sticky_slot: int | None = None) -> str:
+def _build_column_html(
+    column_title: str,
+    cards_html: list[str],
+    subtitle: str = "",
+    sticky_slot: int | None = None,
+    toggle_id: str = "",
+    toggle_icon: str = "",
+) -> str:
     subtitle_html = f'<div class="board-col-subtitle">{escape(subtitle)}</div>' if subtitle else ""
     sticky_cls = f" board-col-sticky board-col-sticky-{sticky_slot}" if sticky_slot is not None else ""
+    sticky_key_cls = f" board-col-col{sticky_slot}" if sticky_slot in (1, 2) else ""
     body_html = "".join(cards_html) if cards_html else '<div class="day-empty">暂无贴文</div>'
+    if toggle_id:
+        safe_icon = escape(toggle_icon or "⟷")
+        head_html = (
+            f'<div class="board-col-head">'
+            f'<label class="col-head-toggle" for="{escape(toggle_id)}" title="点击隐藏/显示本列">'
+            f'<span class="col-head-main"><span class="col-head-icon">{safe_icon}</span><span class="col-head-title">{escape(column_title)}</span></span>'
+            f'<span class="col-head-hint">&lt;&lt;&lt;</span>'
+            f"</label>"
+            f"{subtitle_html}"
+            f"</div>"
+        )
+    else:
+        head_html = f'<div class="board-col-head">{escape(column_title)}{subtitle_html}</div>'
     return (
-        f'<div class="board-col{sticky_cls}">'
-        f'<div class="board-col-head">{escape(column_title)}{subtitle_html}</div>'
+        f'<div class="board-col{sticky_cls}{sticky_key_cls}">'
+        f"{head_html}"
         f'<div class="post-stack">{body_html}</div>'
         "</div>"
     )
@@ -671,7 +692,6 @@ def _render_today_board() -> None:
     selected_categories = st.multiselect(
         "分類篩選",
         options=all_categories,
-        default=st.session_state.get(filter_key, all_categories),
         key=filter_key,
         help="仅筛选前两列（已發佈 / 已排程）。",
     )
@@ -715,23 +735,87 @@ def _render_today_board() -> None:
     .board-scroll::-webkit-scrollbar-thumb { background: #b9b9dc; border-radius: 999px; }
     .board-scroll::-webkit-scrollbar-track { background: #ececf8; border-radius: 999px; }
     .board-grid {
-        --col-main: 240px;
-        --col-category: 210px;
+        --col-width: 210px;
+        --col1-width: var(--col-width);
+        --col2-width: var(--col-width);
         --grid-gap: 10px;
         --frozen-bg-light: rgba(246, 248, 255, 0.86);
         --frozen-bg-dark: rgba(20, 22, 30, 0.84);
         --frozen-divider-light: rgba(24, 24, 44, 0.10);
         --frozen-divider-dark: rgba(0, 0, 0, 0.35);
         display: grid;
-        grid-template-columns: var(--col-main) var(--col-main) repeat(7, var(--col-category));
-        min-width: calc(2 * var(--col-main) + 7 * var(--col-category) + 8 * var(--grid-gap));
+        grid-template-columns: var(--col1-width) var(--col2-width) repeat(7, var(--col-width));
+        min-width: calc(var(--col1-width) + var(--col2-width) + 7 * var(--col-width) + 8 * var(--grid-gap));
         gap: var(--grid-gap);
         align-items: start;
         padding-bottom: 4px;
+        transition: grid-template-columns .24s ease, min-width .24s ease, gap .24s ease;
+    }
+    .col-toggle-state {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+        width: 0;
+        height: 0;
+    }
+    .board-shell {
+        display: grid;
+        grid-template-columns: 40px minmax(0, 1fr);
+        gap: 8px;
+        align-items: start;
+    }
+    .board-controls {
+        position: sticky;
+        left: 0;
+        top: 0;
+        z-index: 95;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    .board-control-btn {
+        height: 40px;
+        width: 40px;
+        border-radius: 10px;
+        border: 1px solid #d7d9f2;
+        background: rgba(248, 249, 255, 0.96);
+        color: #4e4ea8;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        user-select: none;
+        font-size: 18px;
+        line-height: 1;
+        transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease, opacity .12s ease;
+    }
+    .board-control-btn:hover {
+        transform: translateY(-1px);
+        border-color: #8a8ade;
+        box-shadow: 0 4px 12px rgba(66, 66, 140, 0.18);
+    }
+    .board-control-btn::after {
+        content: attr(data-hide-hint);
+        position: absolute;
+        left: 46px;
+        background: rgba(24, 26, 38, 0.88);
+        color: #f2f4ff;
+        font-size: 11px;
+        border-radius: 6px;
+        padding: 2px 6px;
+        white-space: nowrap;
+        opacity: 0;
+        transform: translateY(-1px);
+        pointer-events: none;
+        transition: opacity .1s ease;
+    }
+    .board-control-btn:hover::after {
+        opacity: 1;
     }
     .board-col {
         min-height: 140px;
         position: relative;
+        overflow: hidden;
     }
     .board-col-sticky {
         position: sticky;
@@ -773,7 +857,7 @@ def _render_today_board() -> None:
         }
     }
     .board-col-sticky-1 { left: 0; }
-    .board-col-sticky-2 { left: calc(var(--col-main) + var(--grid-gap)); }
+    .board-col-sticky-2 { left: calc(var(--col-width) + var(--grid-gap)); }
     .board-col-sticky::after {
         content: "";
         position: absolute;
@@ -785,7 +869,7 @@ def _render_today_board() -> None:
         backdrop-filter: saturate(165%) blur(14px);
         -webkit-backdrop-filter: saturate(165%) blur(14px);
         border-right: 1px solid var(--frozen-divider-light);
-        pointer-events: auto;
+        pointer-events: none;
     }
     .board-col-sticky-2::after {
         box-shadow: 6px 0 12px var(--frozen-divider-light);
@@ -816,6 +900,42 @@ def _render_today_board() -> None:
         font-size: 15px;
         font-weight: 700;
         line-height: 1.2;
+        pointer-events: auto;
+    }
+    .col-head-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        width: 100%;
+        cursor: pointer;
+        user-select: none;
+    }
+    .col-head-main {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+    }
+    .col-head-icon {
+        color: #4e4ea8;
+        font-size: 16px;
+        line-height: 1;
+        flex-shrink: 0;
+    }
+    .col-head-title {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .col-head-hint {
+        font-size: 11px;
+        color: #7b7b95;
+        flex-shrink: 0;
+        letter-spacing: -0.5px;
+    }
+    .col-head-toggle:hover .col-head-hint {
+        color: #4e4ea8;
     }
     .board-col-subtitle {
         margin-top: 4px;
@@ -826,6 +946,7 @@ def _render_today_board() -> None:
     .post-stack {
         display: flex;
         flex-direction: column;
+        align-items: stretch;
         gap: 6px;
         margin-top: 8px;
     }
@@ -840,6 +961,8 @@ def _render_today_board() -> None:
     }
     .post-card {
         display: block;
+        width: 100%;
+        max-width: 100%;
         border: 1px solid #dcdcf6;
         border-radius: 8px;
         overflow: hidden;
@@ -865,24 +988,30 @@ def _render_today_board() -> None:
         color: #222;
         overflow: hidden;
         text-overflow: ellipsis;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        min-height: 34px;
+        white-space: nowrap;
+        min-height: 19px;
     }
     @media (max-width: 980px) {
         .board-grid {
-            --col-main: 220px;
-            --col-category: 180px;
+            --col-width: 180px;
         }
         .board-col-head { font-size: 14px; }
         .board-col-subtitle { font-size: 10px; }
     }
     @media (max-width: 768px) {
         .board-grid {
-            --col-main: 136px;
-            --col-category: 168px;
+            --col-width: 168px;
             --grid-gap: 8px;
+        }
+        .board-shell {
+            grid-template-columns: 36px minmax(0, 1fr);
+            gap: 6px;
+        }
+        .board-control-btn {
+            width: 36px;
+            height: 36px;
+            font-size: 16px;
+            border-radius: 9px;
         }
         .board-col {
             min-height: 120px;
@@ -897,6 +1026,8 @@ def _render_today_board() -> None:
             font-size: 13px;
             padding: 7px 6px;
         }
+        .col-head-icon { font-size: 14px; }
+        .col-head-hint { font-size: 10px; }
         .post-stack {
             gap: 5px;
             margin-top: 6px;
@@ -916,15 +1047,74 @@ def _render_today_board() -> None:
             min-height: 30px;
         }
     }
+    .board-root:has(#toggle-col1:checked) .board-grid {
+        --col1-width: 0px;
+    }
+    .board-root:has(#toggle-col2:checked) .board-grid {
+        --col2-width: 0px;
+    }
+    .board-root:has(#toggle-col1:checked) .board-col-sticky-2 {
+        left: 0;
+    }
+    .board-col-col1,
+    .board-col-col2 {
+        transition: opacity .24s ease, transform .24s ease, filter .24s ease;
+        transform: translateX(0);
+        opacity: 1;
+    }
+    .board-root:has(#toggle-col1:checked) .board-col-col1 {
+        opacity: 0;
+        transform: translateX(-24px);
+        filter: blur(1px);
+        pointer-events: none;
+    }
+    .board-root:has(#toggle-col2:checked) .board-col-col2 {
+        opacity: 0;
+        transform: translateX(-20px);
+        filter: blur(1px);
+        pointer-events: none;
+    }
+    .board-root:has(#toggle-col1:checked) .board-control-published {
+        opacity: 0.62;
+        border-color: #8a8ade;
+    }
+    .board-root:has(#toggle-col2:checked) .board-control-scheduled {
+        opacity: 0.62;
+        border-color: #8a8ade;
+    }
+    .board-root:has(#toggle-col1:checked) .board-control-published::after {
+        content: "已發佈 >>>";
+    }
+    .board-root:has(#toggle-col2:checked) .board-control-scheduled::after {
+        content: "已排程 >>>";
+    }
+    @media (prefers-color-scheme: dark) {
+        .board-control-btn {
+            border-color: #3a3f5b;
+            background: rgba(34, 38, 56, 0.95);
+            color: #aab2ff;
+        }
+        .col-head-hint { color: #c9c9da; }
+    }
     </style>
     """
+    board_html += '<div class="board-root">'
+    board_html += '<input type="checkbox" id="toggle-col1" class="col-toggle-state" />'
+    board_html += '<input type="checkbox" id="toggle-col2" class="col-toggle-state" />'
+    board_html += '<div class="board-shell">'
+    board_html += (
+        '<div class="board-controls">'
+        '<label class="board-control-btn board-control-published" for="toggle-col1" title="显示/隐藏 已發佈 列" data-hide-hint="已發佈 <<<">📰</label>'
+        '<label class="board-control-btn board-control-scheduled" for="toggle-col2" title="显示/隐藏 已排程 列" data-hide-hint="已排程 <<<">📅</label>'
+        "</div>"
+    )
     board_html += '<div class="board-scroll"><div class="board-grid">'
-    board_html += _build_column_html("已發佈", published_cards, sticky_slot=1)
-    board_html += _build_column_html("已排程", scheduled_cards, sticky_slot=2)
+    board_html += _build_column_html("已發佈", published_cards, sticky_slot=1, toggle_id="toggle-col1", toggle_icon="📰")
+    board_html += _build_column_html("已排程", scheduled_cards, sticky_slot=2, toggle_id="toggle-col2", toggle_icon="📅")
     for category in ["社會事", "大視野", "兩岸", "法庭事", "消費", "娛樂", "心韓"]:
         category_cards = [_card_html(item, dt) for dt, item in pending_by_category.get(category, [])]
         board_html += _build_column_html(category, category_cards, subtitle="已出未排")
-    board_html += "</div></div>"
+    board_html += "</div></div></div></div>"
     st.markdown(board_html, unsafe_allow_html=True)
 
 
