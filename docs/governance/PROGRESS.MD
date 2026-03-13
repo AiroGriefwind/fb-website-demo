@@ -866,3 +866,90 @@
 
 下一步:
 - 让你复测拖放后是否可直接弹出排程对话框；如仍失败，再升级为自定义 streamlit component 双向通信。
+
+日期时间(HKT): 2026-03-13
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@4ddf472
+完成内容:
+- [本仓库] 更新 `docs/governance/TECHSTACK.MD` 的 Streamlit 技术条目，补充当前已实现能力清单与函数映射（页面状态、弹窗、拖拽排程、RSS 解析、样本读写、前端组件桥接、样式系统）。
+- [本仓库] 对 `src/dashboard/app.py` 现状进行结构复盘（函数分布与职责边界），为后续模块化拆分提供依据。
+
+验证结果:
+- 文档内容已更新并与当前代码实现一致，可用于快速理解现有 dashboard 能力与技术路径。
+
+风险/阻塞:
+- `app.py` 当前体量较大（1500+ 行），若继续叠加功能，维护成本和回归成本会持续上升。
+
+下一步:
+- 按“数据层 / 视图层 / 前端桥接层 / 业务动作层”拆分 `app.py` 为多模块，并保留 `src/dashboard/app.py` 作为薄入口。
+
+日期时间(HKT): 2026-03-13
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@4ddf472
+完成内容:
+- [本仓库] 启动 `app.py` 第一阶段拆分：新增 `src/dashboard/config.py`（常量）、`data_utils.py`（数据加载/RSS/排序）、`media_utils.py`（时间与缩略图工具）、`style_utils.py`（分类配色）、`scheduling_utils.py`（待排程->已排程写回）。
+- [本仓库] `src/dashboard/app.py` 改为调用上述模块（保留原函数名作为兼容包装），实现“行为不变”的前提下完成核心工具层拆分。
+- [本仓库] 保留 `src/dashboard/app.py` 为页面装配入口，降低后续二阶段拆分风险。
+
+验证结果:
+- `python -m py_compile` 覆盖 `app.py` 与 5 个新模块全部通过。
+- `read_lints` 检查拆分涉及文件无新增问题。
+
+风险/阻塞:
+- 当前仍保留部分兼容包装函数（为确保零行为回归）；下一阶段可继续下沉渲染函数，进一步缩短 `app.py`。
+
+下一步:
+- 第二阶段拆分渲染层：优先迁移 `board/trends/settings` 视图函数与前端脚本模板，`app.py` 收敛为路由与编排入口。
+
+日期时间(HKT): 2026-03-13
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@4ddf472
+完成内容:
+- [本仓库] 完成第二阶段核心拆分：新增 `src/dashboard/board_view.py`，承接主看板渲染、拖拽排程对话框与列布局逻辑；`app.py` 改为调用 `render_today_board()`。
+- [本仓库] 新增 `src/dashboard/frontend_templates.py`，集中管理前端 JS 模板（分类筛选标签着色脚本、拖放排程桥接脚本）。
+- [本仓库] `app.py` 移除已迁出的 board 相关大段实现，保留为主入口编排层（页面配置 + sidebar/settings + board 调用）。
+
+验证结果:
+- `python -m py_compile` 覆盖 `app.py`、`board_view.py`、`frontend_templates.py` 及 dashboard 子模块全部通过。
+- `read_lints` 检查 `src/dashboard/` 无新增问题。
+
+风险/阻塞:
+- 目前 `trends/settings` 仍在 `app.py`，后续可继续拆到 `trends_view.py` / `settings_view.py`，进一步降低主文件复杂度。
+
+下一步:
+- 第三阶段拆分：迁移 sidebar/trends/settings 视图函数与样式片段，`app.py` 最终收敛为薄入口。
+
+日期时间(HKT): 2026-03-13
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@4ddf472
+完成内容:
+- [本仓库] 完成第三阶段拆分：新增 `src/dashboard/sidebar_view.py`，迁移 `sidebar/trends/settings` 相关 UI 与交互函数。
+- [本仓库] 新增 `src/dashboard/frontend_templates.py` 承载前端模板后，继续由 `board_view.py` / `sidebar_view.py` 复用，减少主入口中的内嵌脚本体积。
+- [本仓库] `src/dashboard/app.py` 收敛为薄入口（仅保留 page config、标题、health、模块编排调用）。
+- [本仓库] 修复拆分过程中的 `app.py` 字符串编码异常，恢复页面标题与 caption 文案。
+
+验证结果:
+- `python -m py_compile` 覆盖 `src/dashboard/` 所有模块通过。
+- `read_lints` 检查 `src/dashboard/` 与治理文档无新增问题。
+
+风险/阻塞:
+- 趋势卡片 HTML/CSS/JS 仍为内联模板，后续可继续抽为独立模板文件或组件以提升可维护性。
+
+下一步:
+- 进行一次手工回归：设置弹窗、趋势刷新、拖拽排程（桌面/移动）三条主链路验证。
+
+日期时间(HKT): 2026-03-13
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@4ddf472
+完成内容:
+- [本仓库] 按需求更新 `docs/governance/STARTUP.MD`：在 `feature/bot-ui-ops` 下新增 3 组后续对话可复用的“开场白提示词”。
+- [本仓库] 新增主题分别覆盖：`Json -> PostgreSQL`（并发与审计）、`登录与访问控制`、`假数据 -> API 真数据`，并统一写入阅读前置、目标、约束与进度回写要求。
+
+验证结果:
+- 文档结构与现有治理风格一致，可直接复制给后续 LLM 对话使用。
+
+风险/阻塞:
+- 若后续职责边界变化（例如新增独立 API 服务目录），需同步更新提示词中的“重点目录/改动范围”约束。
+
+下一步:
+- 在下一轮任务启动时使用对应提示词，确保各子任务的职责边界与交付标准一致。
