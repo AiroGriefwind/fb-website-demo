@@ -705,3 +705,39 @@
 
 下一步:
 - 让你在目标浏览器复测“列头点击 + 左侧按钮点击”一致性与动画顺滑度，必要时微调动画时长（当前 0.24s）。
+
+日期时间(HKT): 2026-03-13
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@e662769
+完成内容:
+- [本仓库] 修复移动端左侧控制栏提示常驻问题：将提示浮层限制为“仅支持 hover 的设备”显示，在触屏设备禁用悬浮提示，避免点击后长期停留。
+- [本仓库] 强化前两列与后续列的等宽约束：列容器统一 `width: var(--col-width)`，并为前两列补齐副标题占位行，改善与后续两行列头的视觉一致性。
+- [本仓库] 修复前两列间穿透感：提高 sticky 遮罩不透明度与层级（z-index），并增强列间分隔阴影，减少卡片内容在列缝处透出/误触。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 与 `docs/governance/PROGRESS.MD` 无新增问题。
+
+风险/阻塞:
+- sticky 磨砂与阴影观感仍受浏览器渲染内核差异影响，极少数设备上可能有轻微深浅差别。
+
+下一步:
+- 让你复测手机端提示行为与前两列遮挡效果；若需要可进一步降低遮罩透明度波动（改为纯实色背景）。
+
+日期时间(HKT): 2026-03-13
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@e662769
+完成内容:
+- [本仓库] 修复前两列宽度与穿透回归问题：将第1/2列宽度绑定到动态变量 `--col1-width`/`--col2-width`，避免隐藏动画时列轨道为 0 但列元素仍保持 `--col-width` 导致重叠。
+- [本仓库] 修正第2列 sticky 偏移为基于第1列动态宽度（`left: calc(var(--col1-width) + gap)`），保证第1列收起后第2列不会漂移遮挡。
+- [本仓库] 增加隐藏态内容可见性保护（`visibility: hidden`）与统一 `box-sizing`，减少列缝穿透和宽度不一致观感。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 与 `docs/governance/PROGRESS.MD` 无新增问题。
+
+风险/阻塞:
+- 仍依赖 `:has` 支持来驱动纯 CSS 状态联动；旧浏览器可能仅退化动效，不影响基本可用性。
+
+下一步:
+- 推送到 demo 仓库后让你在桌面/手机复测“首两列等宽 + 无穿透 + 折叠动画”三项。
