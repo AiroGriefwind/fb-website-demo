@@ -44,10 +44,57 @@ TRENDS_WEB_URL = "https://trends.google.com/trending?geo=HK"
 TRENDS_RSS_TTL_SECONDS = 900
 
 CATEGORY_ORDER = ["娛樂", "社會事", "大視野", "兩岸", "法庭事", "消費", "心韓"]
+CATEGORY_BASE_COLORS = {
+    "社會事": "#009933",
+    "大視野": "#FF6600",
+    "兩岸": "#F50000",
+    "法庭事": "#01143C",
+    "消費": "#493692",
+    "娛樂": "#990099",
+    "心韓": "#9D8AD6",
+}
+CATEGORY_CLASS_MAP = {name: f"cat-{idx + 1}" for idx, name in enumerate(CATEGORY_ORDER)}
+CATEGORY_INTENSITY_OVERRIDES = {
+    # Raise intensity for close/dark hues to improve visual separation in board and chips.
+    "法庭事": {"header": 0.44, "border": 0.58, "card": 0.34},
+    "消費": {"header": 0.44, "border": 0.58, "card": 0.34},
+    "心韓": {"header": 0.40, "border": 0.54, "card": 0.30},
+}
 
 
 def get_dashboard_health() -> dict[str, str]:
     return {"status": "ok", "module": "dashboard"}
+
+
+def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    clean = hex_color.strip().lstrip("#")
+    if len(clean) != 6:
+        return (128, 128, 128)
+    return tuple(int(clean[i : i + 2], 16) for i in (0, 2, 4))
+
+
+def _mix_with_white(hex_color: str, color_ratio: float) -> str:
+    r, g, b = _hex_to_rgb(hex_color)
+    ratio = max(0.0, min(1.0, color_ratio))
+    wr = round(255 * (1 - ratio) + r * ratio)
+    wg = round(255 * (1 - ratio) + g * ratio)
+    wb = round(255 * (1 - ratio) + b * ratio)
+    return f"#{wr:02X}{wg:02X}{wb:02X}"
+
+
+def _category_style_tokens(category: str) -> dict[str, str]:
+    base = CATEGORY_BASE_COLORS.get(category, "#667085")
+    intensity = CATEGORY_INTENSITY_OVERRIDES.get(category, {})
+    header_ratio = float(intensity.get("header", 0.33))
+    border_ratio = float(intensity.get("border", 0.52))
+    card_ratio = float(intensity.get("card", 0.22))
+    return {
+        "base": base,
+        "header_bg": _mix_with_white(base, header_ratio),
+        "header_border": _mix_with_white(base, border_ratio),
+        "card_bg": _mix_with_white(base, card_ratio),
+        "card_border": _mix_with_white(base, max(card_ratio, 0.45)),
+    }
 
 
 def _read_json_list(path: Path) -> list[dict[str, Any]]:
@@ -614,12 +661,15 @@ def _card_html(item: dict[str, Any], dt_hkt: datetime) -> str:
     title = escape(str(item.get("title", "")))
     thumb = escape(_resolve_thumbnail_src(str(item.get("thumbnail", ""))))
     time_text = dt_hkt.strftime("%m/%d %H:%M")
+    category = str(item.get("category", ""))
+    category_cls = CATEGORY_CLASS_MAP.get(category, "")
+    card_cls = f" post-card-{category_cls}" if category_cls else ""
     if thumb:
         thumb_html = f'<img class="post-thumb" src="{thumb}" alt="thumbnail"/>'
     else:
         thumb_html = '<div class="post-thumb-placeholder"></div>'
     return (
-        f'<a class="post-card" href="{link}" target="_blank" rel="noopener noreferrer">'
+        f'<a class="post-card{card_cls}" href="{link}" target="_blank" rel="noopener noreferrer">'
         f'<div class="post-time">{time_text}</div>'
         f"{thumb_html}"
         f'<div class="post-title">{title}</div>'
@@ -643,11 +693,13 @@ def _build_column_html(
     sticky_slot: int | None = None,
     toggle_id: str = "",
     toggle_icon: str = "",
+    category_key: str = "",
 ) -> str:
     subtitle_text = escape(subtitle) if subtitle else "&nbsp;"
     subtitle_html = f'<div class="board-col-subtitle">{subtitle_text}</div>'
     sticky_cls = f" board-col-sticky board-col-sticky-{sticky_slot}" if sticky_slot is not None else ""
     sticky_key_cls = f" board-col-col{sticky_slot}" if sticky_slot in (1, 2) else ""
+    category_cls = f' board-col-{CATEGORY_CLASS_MAP.get(category_key, "")}' if category_key else ""
     body_html = "".join(cards_html) if cards_html else '<div class="day-empty">暂无贴文</div>'
     if toggle_id:
         safe_icon = escape(toggle_icon or "⟷")
@@ -663,7 +715,7 @@ def _build_column_html(
     else:
         head_html = f'<div class="board-col-head">{escape(column_title)}{subtitle_html}</div>'
     return (
-        f'<div class="board-col{sticky_cls}{sticky_key_cls}">'
+        f'<div class="board-col{sticky_cls}{sticky_key_cls}{category_cls}">'
         f"{head_html}"
         f'<div class="post-stack">{body_html}</div>'
         "</div>"
@@ -696,6 +748,42 @@ def _render_today_board() -> None:
         key=filter_key,
         help="仅筛选前两列（已發佈 / 已排程）。",
     )
+    chip_color_payload = {
+        key: _category_style_tokens(key)["header_bg"] for key in CATEGORY_ORDER if key in all_categories
+    }
+    components.html(
+        f"""
+        <script>
+        (function() {{
+          const colorMap = {json.dumps(chip_color_payload, ensure_ascii=False)};
+          const normalize = (txt) => String(txt || '').replace('×', '').trim();
+          const applyColors = () => {{
+            try {{
+              const doc = window.parent.document;
+              const tags = doc.querySelectorAll('div[data-baseweb="tag"]');
+              tags.forEach((tag) => {{
+                const key = normalize(tag.textContent);
+                const color = colorMap[key];
+                if (!color) return;
+                tag.style.background = color;
+                tag.style.borderColor = color;
+                tag.style.color = '#1c2033';
+                const closeBtn = tag.querySelector('button');
+                if (closeBtn) closeBtn.style.color = '#1c2033';
+              }});
+            }} catch (e) {{
+              // no-op
+            }}
+          }};
+          applyColors();
+          const obs = new MutationObserver(() => applyColors());
+          obs.observe(window.parent.document.body, {{ childList: true, subtree: true }});
+        }})();
+        </script>
+        """,
+        height=0,
+        scrolling=False,
+    )
     active_categories = set(selected_categories or [])
 
     published_cards = [
@@ -721,6 +809,24 @@ def _render_today_board() -> None:
         pending_by_category[category].sort(key=lambda x: x[0], reverse=True)
 
     st.caption(f"日期（HKT）：{now_hkt:%Y-%m-%d}｜横向滚动查看全部栏目，前两列固定。")
+    category_css = []
+    for cat in CATEGORY_ORDER:
+        cls = CATEGORY_CLASS_MAP.get(cat)
+        if not cls:
+            continue
+        tokens = _category_style_tokens(cat)
+        category_css.append(
+            f"""
+            .board-col-{cls} .board-col-head {{
+                background: {tokens['header_bg']};
+                border-color: {tokens['header_border']};
+            }}
+            .post-card-{cls} {{
+                background: {tokens['card_bg']};
+                border-color: {tokens['card_border']};
+            }}
+            """
+        )
     board_html = """
     <style>
     .board-scroll {
@@ -1145,6 +1251,7 @@ def _render_today_board() -> None:
     }
     </style>
     """
+    board_html += "<style>" + "\n".join(category_css) + "</style>"
     board_html += '<div class="board-root">'
     board_html += '<input type="checkbox" id="toggle-col1" class="col-toggle-state" />'
     board_html += '<input type="checkbox" id="toggle-col2" class="col-toggle-state" />'
@@ -1160,7 +1267,7 @@ def _render_today_board() -> None:
     board_html += _build_column_html("已排程", scheduled_cards, sticky_slot=2, toggle_id="toggle-col2", toggle_icon="📅")
     for category in ["社會事", "大視野", "兩岸", "法庭事", "消費", "娛樂", "心韓"]:
         category_cards = [_card_html(item, dt) for dt, item in pending_by_category.get(category, [])]
-        board_html += _build_column_html(category, category_cards, subtitle="已出未排")
+        board_html += _build_column_html(category, category_cards, subtitle="已出未排", category_key=category)
     board_html += "</div></div></div></div>"
     st.markdown(board_html, unsafe_allow_html=True)
 

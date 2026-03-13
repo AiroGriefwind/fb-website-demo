@@ -759,3 +759,38 @@
 
 下一步:
 - 让你在本地与线上同时复测“第一二列间穿透”与“列头宽度一致性”，必要时再切换为纯实色遮挡以彻底消除色边。
+
+日期时间(HKT): 2026-03-13
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@2c2bbbb
+完成内容:
+- [本仓库] 接入栏目色彩映射（社會事/大視野/兩岸/法庭事/消費/娛樂/心韓）并生成浅色版（约 33% 强度）样式 token，用于看板配色统一。
+- [本仓库] 完成两类着色：`已發佈/已排程` 中卡片按贴文分类上浅色底；第3~9列各栏位列头按对应分类上浅色底，保留可读性。
+- [本仓库] 为分类筛选器增加按分类自动着色：通过前端 DOM 监听给 multiselect 已选标签上对应浅色底，便于编辑同事快速识别类别。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 与 `docs/governance/PROGRESS.MD` 无新增问题。
+
+风险/阻塞:
+- 筛选器标签着色依赖 Streamlit 前端 DOM 结构（`data-baseweb=tag`）；后续若 Streamlit 升级改动 DOM，需要同步微调选择器。
+
+下一步:
+- 让你在线上/本地观察颜色浓度是否合适；若偏浅或偏深，可统一调整色彩混合强度（当前 33% / 卡片 22%）。
+
+日期时间(HKT): 2026-03-13
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@2c2bbbb
+完成内容:
+- [本仓库] 按反馈微调分类浓度：仅提升 `法庭事/消費/心韓` 的浅色混合强度，增强三者在列头、卡片底色与筛选标签中的区分度。
+- [本仓库] 新增分类级浓度覆盖配置 `CATEGORY_INTENSITY_OVERRIDES`，以便后续按单分类继续微调而不影响其他分类颜色。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 与 `docs/governance/PROGRESS.MD` 无新增问题。
+
+风险/阻塞:
+- 若在暗色主题下仍感觉色差不够，可进一步提高 `header/card` 比例（每次建议 0.03~0.05 步进）。
+
+下一步:
+- 让你在线上确认三类区分度；如需可继续单独拉高 `法庭事` 或 `心韓`，不影响其他分类。
