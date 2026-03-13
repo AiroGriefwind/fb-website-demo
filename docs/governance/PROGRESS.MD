@@ -953,3 +953,20 @@
 
 下一步:
 - 在下一轮任务启动时使用对应提示词，确保各子任务的职责边界与交付标准一致。
+
+日期时间(HKT): 2026-03-13
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@76c2fcd
+完成内容:
+- [本仓库] 按最新需求调整卡片配色显示模式：`已發佈/已排程` 两列中，仅 `娛樂` 分类卡片保留浅色底，其余分类统一白底；`已出未排` 七列保持原分类配色不变。
+- [本仓库] 颜色逻辑采用“覆盖而非删除”策略：保留分类色类名与样式 token，便于后续在设置中扩展用户可切换显示模式。
+
+验证结果:
+- `python -m py_compile src/dashboard/board_view.py` 通过。
+- `read_lints` 检查 `src/dashboard/board_view.py` 与治理文档无新增问题。
+
+风险/阻塞:
+- 当前显示模式为硬编码默认值；若后续支持用户切换，需增加 session_state 配置项并在 CSS 生成阶段分支。
+
+下一步:
+- 由你在线上确认“已排程去彩色（仅娛樂保留）”观感；如需可再调娛樂底色浓度。
