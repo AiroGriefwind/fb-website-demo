@@ -106,6 +106,10 @@ def _read_json_list(path: Path) -> list[dict[str, Any]]:
     return []
 
 
+def _write_json_list(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.write_text(json.dumps(rows, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
 def _load_from_api(dataset: str) -> list[dict[str, Any]] | None:
     base_url = os.getenv(API_BASE_URL_ENV, "").strip()
     if not base_url:
@@ -656,7 +660,41 @@ def _parse_publish_time(value: str) -> datetime | None:
         return None
 
 
-def _card_html(item: dict[str, Any], dt_hkt: datetime) -> str:
+def _round_up_to_5_minutes(dt: datetime) -> datetime:
+    next_mark = ((dt.minute + 4) // 5) * 5
+    if next_mark >= 60:
+        dt = dt.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    else:
+        dt = dt.replace(minute=next_mark, second=0, microsecond=0)
+    return dt
+
+
+def _to_utc_iso_z(dt_hkt: datetime) -> str:
+    return dt_hkt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _move_pending_item_to_scheduled(item_id: str, schedule_hkt: datetime) -> tuple[bool, str]:
+    if os.getenv(API_BASE_URL_ENV, "").strip():
+        return False, "当前为 API 数据源模式，已禁用本地样本写入。"
+
+    pending_rows = _read_json_list(PENDING_FILE)
+    scheduled_rows = _read_json_list(SCHEDULED_FILE)
+    target_idx = next((idx for idx, row in enumerate(pending_rows) if str(row.get("item_id", "")) == item_id), -1)
+    if target_idx < 0:
+        return False, "未找到目标待排程贴文，可能已被其他操作处理。"
+
+    row = pending_rows.pop(target_idx)
+    row["publish_time"] = _to_utc_iso_z(schedule_hkt)
+    row["updated_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    row["review_status"] = "scheduled"
+    scheduled_rows.append(row)
+
+    _write_json_list(PENDING_FILE, pending_rows)
+    _write_json_list(SCHEDULED_FILE, scheduled_rows)
+    return True, "已完成排程并更新本地样本数据。"
+
+
+def _card_html(item: dict[str, Any], dt_hkt: datetime, draggable: bool = False) -> str:
     link = escape(str(item.get("Post URL", "#")))
     title = escape(str(item.get("title", "")))
     thumb = escape(_resolve_thumbnail_src(str(item.get("thumbnail", ""))))
@@ -664,12 +702,17 @@ def _card_html(item: dict[str, Any], dt_hkt: datetime) -> str:
     category = str(item.get("category", ""))
     category_cls = CATEGORY_CLASS_MAP.get(category, "")
     card_cls = f" post-card-{category_cls}" if category_cls else ""
+    item_id = escape(str(item.get("item_id", "")))
+    drag_attrs = ""
+    if draggable and item_id:
+        card_cls += " post-card-draggable"
+        drag_attrs = f' draggable="true" data-item-id="{item_id}"'
     if thumb:
         thumb_html = f'<img class="post-thumb" src="{thumb}" alt="thumbnail"/>'
     else:
         thumb_html = '<div class="post-thumb-placeholder"></div>'
     return (
-        f'<a class="post-card{card_cls}" href="{link}" target="_blank" rel="noopener noreferrer">'
+        f'<a class="post-card{card_cls}"{drag_attrs} href="{link}" target="_blank" rel="noopener noreferrer">'
         f'<div class="post-time">{time_text}</div>'
         f"{thumb_html}"
         f'<div class="post-title">{title}</div>'
@@ -722,14 +765,112 @@ def _build_column_html(
     )
 
 
+def _render_schedule_dialog_if_needed(pending_lookup: dict[str, dict[str, Any]], now_hkt: datetime) -> None:
+    if not hasattr(st, "dialog"):
+        return
+
+    target_item_id = str(st.session_state.get("schedule_pick_item_id", "")).strip()
+    is_open = bool(st.session_state.get("schedule_dialog_open", False))
+    if not is_open or not target_item_id:
+        return
+
+    item = pending_lookup.get(target_item_id)
+    if not item:
+        st.warning("目标待排程贴文不存在，可能已处理。")
+        st.session_state["schedule_dialog_open"] = False
+        st.session_state["schedule_pick_item_id"] = ""
+        return
+
+    default_dt = _round_up_to_5_minutes(now_hkt + timedelta(minutes=5))
+    key_date = f"sched_date_{target_item_id}"
+    key_hour = f"sched_hour_{target_item_id}"
+    key_min = f"sched_min_{target_item_id}"
+    st.session_state.setdefault(key_date, default_dt.date())
+    st.session_state.setdefault(key_hour, default_dt.hour)
+    st.session_state.setdefault(key_min, (default_dt.minute // 5) * 5)
+
+    @st.dialog("设置排程时间")
+    def _schedule_dialog() -> None:
+        st.caption("拖放完成后，请设置发布时间（5 分钟粒度）。")
+        st.write(f"目标贴文：{item.get('title', 'N/A')}")
+
+        date_col, hour_col, min_col = st.columns([2.2, 1, 1])
+        with date_col:
+            st.date_input("日期", key=key_date)
+        with hour_col:
+            st.selectbox("小时", options=list(range(24)), key=key_hour, format_func=lambda x: f"{int(x):02d}")
+        with min_col:
+            st.selectbox("分钟", options=list(range(0, 60, 5)), key=key_min, format_func=lambda x: f"{int(x):02d}")
+
+        action_col1, action_col2 = st.columns(2)
+        with action_col1:
+            if st.button("确认排程", use_container_width=True):
+                chosen_date = st.session_state.get(key_date, default_dt.date())
+                chosen_hour = int(st.session_state.get(key_hour, default_dt.hour))
+                chosen_min = int(st.session_state.get(key_min, default_dt.minute))
+                schedule_dt = datetime(
+                    chosen_date.year,
+                    chosen_date.month,
+                    chosen_date.day,
+                    chosen_hour,
+                    chosen_min,
+                    tzinfo=HKT_TZ,
+                )
+                ok, msg = _move_pending_item_to_scheduled(target_item_id, schedule_dt)
+                if ok:
+                    st.session_state["board_flash"] = f"排程成功：{schedule_dt:%Y-%m-%d %H:%M}（HKT）"
+                    st.session_state["schedule_dialog_open"] = False
+                    st.session_state["schedule_pick_item_id"] = ""
+                    st.rerun()
+                st.error(msg)
+        with action_col2:
+            if st.button("取消", use_container_width=True):
+                st.session_state["schedule_dialog_open"] = False
+                st.session_state["schedule_pick_item_id"] = ""
+                st.rerun()
+
+    _schedule_dialog()
+
+
 def _render_today_board() -> None:
     now_hkt = datetime.now(HKT_TZ)
+    st.markdown(
+        """
+        <style>
+        .st-key-drag_drop_commit {
+            display: none !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.button("drag_drop_commit", key="drag_drop_commit")
+
     past_24h = now_hkt - timedelta(hours=24)
     next_24h = now_hkt + timedelta(hours=24)
 
     published_items = _collect_time_sorted_items(_load_published_items())
     scheduled_items = _collect_time_sorted_items(_load_scheduled_items())
     pending_items = _collect_time_sorted_items(_load_pending_base())
+    pending_lookup = {str(item.get("item_id", "")): item for _, item in pending_items if str(item.get("item_id", ""))}
+
+    picked_raw = st.query_params.get("schedule_pick", "")
+    if isinstance(picked_raw, list):
+        picked_item_id = str(picked_raw[0] if picked_raw else "").strip()
+    else:
+        picked_item_id = str(picked_raw).strip()
+    if st.session_state.get("debug_drag_enabled", True):
+        st.caption(f"[debug] schedule_pick raw={picked_raw!r}, parsed={picked_item_id!r}")
+    if picked_item_id:
+        if picked_item_id in pending_lookup:
+            st.session_state["schedule_pick_item_id"] = picked_item_id
+            st.session_state["schedule_dialog_open"] = True
+        else:
+            st.warning("未找到拖放目标，可能已被处理。")
+        try:
+            del st.query_params["schedule_pick"]
+        except Exception:
+            pass
 
     available_categories = {
         str(item.get("category", "未分類"))
@@ -785,14 +926,17 @@ def _render_today_board() -> None:
         scrolling=False,
     )
     active_categories = set(selected_categories or [])
+    flash_message = str(st.session_state.pop("board_flash", "")).strip()
+    if flash_message:
+        st.success(flash_message)
 
     published_cards = [
-        _card_html(item, dt)
+        _card_html(item, dt, draggable=False)
         for dt, item in sorted(published_items, key=lambda x: x[0], reverse=True)
         if past_24h <= dt <= now_hkt and (not active_categories or str(item.get("category", "未分類")) in active_categories)
     ]
     scheduled_cards = [
-        _card_html(item, dt)
+        _card_html(item, dt, draggable=False)
         for dt, item in sorted(scheduled_items, key=lambda x: x[0])
         if now_hkt <= dt <= next_24h and (not active_categories or str(item.get("category", "未分類")) in active_categories)
     ]
@@ -1113,6 +1257,16 @@ def _render_today_board() -> None:
         transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease, opacity .15s ease;
         cursor: pointer;
     }
+    .post-card-draggable {
+        cursor: grab;
+    }
+    .post-card-draggable:active {
+        cursor: grabbing;
+    }
+    .dropzone-active {
+        outline: 2px dashed #6e6edd;
+        outline-offset: 3px;
+    }
     .post-card:hover {
         border-color: #6e6edd;
         box-shadow: 0 4px 12px rgba(78, 78, 168, 0.18);
@@ -1266,10 +1420,169 @@ def _render_today_board() -> None:
     board_html += _build_column_html("已發佈", published_cards, sticky_slot=1, toggle_id="toggle-col1", toggle_icon="📰")
     board_html += _build_column_html("已排程", scheduled_cards, sticky_slot=2, toggle_id="toggle-col2", toggle_icon="📅")
     for category in ["社會事", "大視野", "兩岸", "法庭事", "消費", "娛樂", "心韓"]:
-        category_cards = [_card_html(item, dt) for dt, item in pending_by_category.get(category, [])]
+        category_cards = [_card_html(item, dt, draggable=True) for dt, item in pending_by_category.get(category, [])]
         board_html += _build_column_html(category, category_cards, subtitle="已出未排", category_key=category)
     board_html += "</div></div></div></div>"
     st.markdown(board_html, unsafe_allow_html=True)
+    components.html(
+        """
+        <script>
+        (function () {
+          const DBG = '[drag-schedule-debug]';
+          const log = (...args) => console.log(DBG, ...args);
+          log('script init');
+          const parentDoc = window.parent.document;
+          const board = parentDoc.querySelector('.board-root');
+          if (!board) {
+            log('board-root not found');
+            return;
+          }
+          const scheduleDropCol = board.querySelector('.board-col-col2');
+          if (!scheduleDropCol) {
+            log('schedule drop column not found');
+            return;
+          }
+          const dropTargets = [
+            scheduleDropCol.querySelector('.board-col-head'),
+            scheduleDropCol.querySelector('.post-stack'),
+            scheduleDropCol
+          ].filter(Boolean);
+          log('dropTargets count =', dropTargets.length);
+          let draggingItemId = '';
+
+          const scheduleByItem = (itemId) => {
+            if (!itemId) {
+              log('scheduleByItem blocked: empty itemId');
+              return;
+            }
+            log('scheduleByItem start', { itemId });
+            const pwin = window.parent;
+            const url = new URL(pwin.location.href);
+            url.searchParams.set('schedule_pick', itemId);
+            pwin.history.replaceState({}, "", url.toString());
+            log('query param set via history.replaceState', url.toString());
+            const commitBtn = parentDoc.querySelector('.st-key-drag_drop_commit button');
+            if (commitBtn) {
+              commitBtn.click();
+              log('clicked hidden drag_drop_commit button to trigger rerun');
+            } else {
+              log('hidden drag_drop_commit button not found; waiting manual rerun');
+            }
+          };
+
+          const clearHighlight = () => dropTargets.forEach((el) => el.classList.remove('dropzone-active'));
+          const setHighlight = () => dropTargets.forEach((el) => el.classList.add('dropzone-active'));
+
+          const bindCard = (card) => {
+            if (!card || card.dataset.scheduleBound === '1') return;
+            card.dataset.scheduleBound = '1';
+            const itemId = card.dataset.itemId || '';
+            if (!itemId) {
+              log('skip bind: missing data-item-id', card);
+              return;
+            }
+            log('bind card', itemId);
+
+            card.addEventListener('dragstart', (ev) => {
+              draggingItemId = itemId;
+              if (ev.dataTransfer) {
+                ev.dataTransfer.effectAllowed = 'copyMove';
+                ev.dataTransfer.setData('text/plain', itemId);
+                ev.dataTransfer.setData('application/x-item-id', itemId);
+              }
+              card.dataset.dragging = '1';
+              log('dragstart', {
+                itemId,
+                hasDataTransfer: !!ev.dataTransfer,
+              });
+              setHighlight();
+            });
+            card.addEventListener('dragend', () => {
+              card.dataset.dragging = '0';
+              log('dragend', { itemId });
+              draggingItemId = '';
+              clearHighlight();
+            });
+
+            let touchTimer = null;
+            let touchDragging = false;
+            let touchOverDrop = false;
+
+            card.addEventListener('touchstart', () => {
+              touchDragging = false;
+              touchOverDrop = false;
+              log('touchstart', { itemId });
+              touchTimer = window.setTimeout(() => {
+                touchDragging = true;
+                log('touch long press armed', { itemId });
+                setHighlight();
+              }, 360);
+            }, { passive: true });
+
+            card.addEventListener('touchmove', (ev) => {
+              if (!touchDragging) return;
+              const touch = ev.touches && ev.touches[0];
+              if (!touch) return;
+              const hit = parentDoc.elementFromPoint(touch.clientX, touch.clientY);
+              touchOverDrop = !!(hit && hit.closest && hit.closest('.board-col-col2'));
+            }, { passive: true });
+
+            card.addEventListener('touchend', () => {
+              if (touchTimer) {
+                clearTimeout(touchTimer);
+                touchTimer = null;
+              }
+              log('touchend', { itemId, touchDragging, touchOverDrop });
+              if (touchDragging && touchOverDrop) {
+                scheduleByItem(itemId);
+              }
+              touchDragging = false;
+              touchOverDrop = false;
+              clearHighlight();
+            });
+          };
+
+          dropTargets.forEach((target) => {
+            target.addEventListener('dragover', (ev) => {
+              ev.preventDefault();
+              if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'copy';
+              setHighlight();
+            });
+            target.addEventListener('dragleave', clearHighlight);
+            target.addEventListener('drop', (ev) => {
+              ev.preventDefault();
+              ev.stopPropagation();
+              let itemId = '';
+              if (ev.dataTransfer) {
+                itemId = ev.dataTransfer.getData('application/x-item-id') || ev.dataTransfer.getData('text/plain') || '';
+              }
+              if (!itemId) itemId = draggingItemId;
+              log('drop', {
+                itemIdFromTransfer: ev.dataTransfer ? (ev.dataTransfer.getData('application/x-item-id') || ev.dataTransfer.getData('text/plain') || '') : '',
+                fallbackDraggingItemId: draggingItemId,
+                finalItemId: itemId,
+              });
+              clearHighlight();
+              scheduleByItem(itemId);
+            });
+          });
+
+          const bindAll = () => {
+            const cards = board.querySelectorAll('.post-card-draggable[data-item-id]');
+            log('bindAll cards=', cards.length);
+            cards.forEach(bindCard);
+          };
+          bindAll();
+          const mo = new MutationObserver(() => bindAll());
+          mo.observe(board, { childList: true, subtree: true });
+          log('mutation observer attached');
+        })();
+        </script>
+        """,
+        height=0,
+        scrolling=False,
+    )
+    _render_schedule_dialog_if_needed(pending_lookup=pending_lookup, now_hkt=now_hkt)
 
 
 def main() -> None:

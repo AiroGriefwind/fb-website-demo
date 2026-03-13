@@ -794,3 +794,75 @@
 
 下一步:
 - 让你在线上确认三类区分度；如需可继续单独拉高 `法庭事` 或 `心韓`，不影响其他分类。
+
+日期时间(HKT): 2026-03-13
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@6f70d2e
+完成内容:
+- [本仓库] 新增拖拽排程主流程（MVP）：`已出未排` 卡片支持鼠标拖拽 / 触屏长按后拖放到 `已排程` 列，释放后进入排程时间设置弹窗。
+- [本仓库] 新增排程弹窗（`st.dialog`）：支持日期 + 小时 + 分钟设置，分钟仅允许 `00/05/10/.../55`（5 分钟粒度）。
+- [本仓库] 新增本地样本写回：确认排程后从 `dashboard_pending.json` 移除目标贴文并写入 `dashboard_scheduled.json`，自动更新 `publish_time` 与 `updated_at`，随后刷新 UI 按新时间重排。
+- [本仓库] 增加拖放桥接脚本：在前端监听拖放并通过 URL query 参数回传 `item_id` 触发后端弹窗流程。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 与 `docs/governance/PROGRESS.MD` 无新增问题。
+
+风险/阻塞:
+- 当前拖放桥接依赖前端 DOM 结构与浏览器拖放事件；不同移动端浏览器的长按触发体验可能有细微差异，已提供基础长按拖放兜底。
+- 若启用 `DASHBOARD_API_BASE_URL`（API 模式），本地样本写回会被禁用并给出提示。
+
+下一步:
+- 让你在桌面与手机实测拖放命中、弹窗唤起与写回结果；按反馈微调长按时长与 drop zone 命中范围。
+
+日期时间(HKT): 2026-03-13
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@6f70d2e
+完成内容:
+- [本仓库] 修复拖放后“无事发生”问题：增强拖放桥接的 item_id 传递链路，采用 `dataTransfer`（`application/x-item-id` + `text/plain`）与全局拖拽状态双通道兜底。
+- [本仓库] 补强 drop 事件处理（`stopPropagation`）并兼容 query 参数读取返回 `list|string` 两种格式，确保拖放后能稳定触发排程弹窗。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 与 `docs/governance/PROGRESS.MD` 无新增问题。
+
+风险/阻塞:
+- 拖放回传仍依赖浏览器对 iframe/parent URL 变更策略；若个别环境阻止父页面导航，需改为 Streamlit 自定义组件双向通信方案。
+
+下一步:
+- 让你复测桌面拖放“松手即弹窗”；若仍不触发，将切换为同页原生拖放组件（无 parent URL 跳转依赖）。
+
+日期时间(HKT): 2026-03-13
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@6f70d2e
+完成内容:
+- [本仓库] 为拖放排程链路加入详细 debug 日志：前端在浏览器 console 输出初始化、卡片绑定、dragstart/drop、item_id 解析、URL 跳转等关键节点。
+- [本仓库] 增加后端 query 参数接收调试提示：页面显示 `schedule_pick raw/parsed`，帮助定位“前端 drop 已触发但后端未接收”的问题。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 与 `docs/governance/PROGRESS.MD` 无新增问题。
+
+风险/阻塞:
+- 当前 debug 输出较多，便于排障；问题定位完成后建议收敛或加开关控制。
+
+下一步:
+- 由你执行一次拖放并提供 console 输出日志，基于日志定位最终卡点并修复。
+
+日期时间(HKT): 2026-03-13
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@6f70d2e
+完成内容:
+- [本仓库] 基于 debug 日志定位到拖放回传失败根因：`components.html` iframe 被 sandbox 限制，无法直接导航父页面（`window.parent.location.href`）。
+- [本仓库] 将回传机制改为“无导航”链路：拖放后通过 `window.parent.history.replaceState` 写入 `schedule_pick` 查询参数，再自动点击隐藏的 Streamlit 按钮触发 rerun，以拉起排程弹窗。
+- [本仓库] 保留 debug 输出，新增“已写入 query 参数/已触发隐藏按钮”日志，便于确认链路是否完整触发。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 与 `docs/governance/PROGRESS.MD` 无新增问题。
+
+风险/阻塞:
+- 若后续 Streamlit DOM 结构变更导致隐藏按钮选择器失效，需同步调整 `.st-key-drag_drop_commit button` 定位规则。
+
+下一步:
+- 让你复测拖放后是否可直接弹出排程对话框；如仍失败，再升级为自定义 streamlit component 双向通信。
