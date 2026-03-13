@@ -564,3 +564,21 @@
 
 下一步:
 - 推送本次改动到 demo 仓库并回填实际 commit hash。
+
+日期时间(HKT): 2026-03-13
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@<待填新commit>
+完成内容:
+- [本仓库] 更新 `data/samples/dashboard_published.json`、`data/samples/dashboard_scheduled.json`、`data/samples/dashboard_pending.json` 的演示假数据日期到 2026-03-13，并同步推进 `publish_time`、`updated_at`、`run_id`、`item_id`（pending）与标题日期标记。
+- [本仓库] 调整 `src/dashboard/app.py` 九列看板的移动端样式：在竖屏场景下缩窄前两列 sticky 宽度、压缩卡片密度，并增强横向触控滚动配置，降低前两列遮挡第3列及之后内容的问题。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 无新增问题。
+- 样本文件抽查通过：三份 JSON 的标题与时间字段已切换到 2026-03-13 语义。
+
+风险/阻塞:
+- 移动端 sticky 与磨砂遮罩在不同浏览器内核下仍可能有细微视觉差异，需在目标手机浏览器继续实测。
+
+下一步:
+- 在手机竖屏实测横向滑动体验；如仍感觉遮挡，可继续引入“手机端 sticky 宽度档位（紧凑/标准）”开关。

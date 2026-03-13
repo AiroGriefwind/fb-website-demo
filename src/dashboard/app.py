@@ -708,6 +708,8 @@ def _render_today_board() -> None:
         overflow-y: hidden;
         padding-bottom: 6px;
         position: relative;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-x: contain;
     }
     .board-scroll::-webkit-scrollbar { height: 8px; }
     .board-scroll::-webkit-scrollbar-thumb { background: #b9b9dc; border-radius: 999px; }
@@ -722,7 +724,7 @@ def _render_today_board() -> None:
         --frozen-divider-dark: rgba(0, 0, 0, 0.35);
         display: grid;
         grid-template-columns: var(--col-main) var(--col-main) repeat(7, var(--col-category));
-        min-width: calc(2 * var(--col-main) + 7 * var(--col-category) + 8 * 10px);
+        min-width: calc(2 * var(--col-main) + 7 * var(--col-category) + 8 * var(--grid-gap));
         gap: var(--grid-gap);
         align-items: start;
         padding-bottom: 4px;
@@ -875,6 +877,44 @@ def _render_today_board() -> None:
         }
         .board-col-head { font-size: 14px; }
         .board-col-subtitle { font-size: 10px; }
+    }
+    @media (max-width: 768px) {
+        .board-grid {
+            --col-main: 136px;
+            --col-category: 168px;
+            --grid-gap: 8px;
+        }
+        .board-col {
+            min-height: 120px;
+        }
+        .board-col-sticky::before {
+            box-shadow: 4px 0 8px rgba(20, 20, 40, 0.10);
+        }
+        .board-col-sticky-2::after {
+            box-shadow: 4px 0 8px var(--frozen-divider-light);
+        }
+        .board-col-head {
+            font-size: 13px;
+            padding: 7px 6px;
+        }
+        .post-stack {
+            gap: 5px;
+            margin-top: 6px;
+        }
+        .post-time {
+            font-size: 11px;
+            padding: 5px 6px 0 6px;
+        }
+        .post-thumb, .post-thumb-placeholder {
+            height: 58px;
+            margin-top: 3px;
+        }
+        .post-title {
+            font-size: 11px;
+            line-height: 1.25;
+            padding: 5px 6px 7px 6px;
+            min-height: 30px;
+        }
     }
     </style>
     """
