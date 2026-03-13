@@ -731,6 +731,9 @@ def _render_today_board() -> None:
         -webkit-overflow-scrolling: touch;
         overscroll-behavior-x: contain;
     }
+    .board-scroll, .board-grid, .board-col, .board-col-head, .post-card {
+        box-sizing: border-box;
+    }
     .board-scroll::-webkit-scrollbar { height: 8px; }
     .board-scroll::-webkit-scrollbar-thumb { background: #b9b9dc; border-radius: 999px; }
     .board-scroll::-webkit-scrollbar-track { background: #ececf8; border-radius: 999px; }
@@ -809,19 +812,41 @@ def _render_today_board() -> None:
         pointer-events: none;
         transition: opacity .1s ease;
     }
-    .board-control-btn:hover::after {
-        opacity: 1;
+    @media (hover: hover) and (pointer: fine) {
+        .board-control-btn:hover::after {
+            opacity: 1;
+        }
+    }
+    @media (hover: none), (pointer: coarse) {
+        .board-control-btn::after {
+            display: none;
+        }
     }
     .board-col {
         min-height: 140px;
         position: relative;
         overflow: hidden;
+        width: var(--col-width);
+        min-width: var(--col-width);
+        max-width: var(--col-width);
+    }
+    .board-col-col1 {
+        width: var(--col1-width);
+        min-width: var(--col1-width);
+        max-width: var(--col1-width);
+    }
+    .board-col-col2 {
+        width: var(--col2-width);
+        min-width: var(--col2-width);
+        max-width: var(--col2-width);
     }
     .board-col-sticky {
         position: sticky;
         z-index: 60;
         isolation: isolate;
         border-radius: 10px;
+        transform: translateZ(0);
+        backface-visibility: hidden;
     }
     .board-col-sticky::before {
         content: "";
@@ -829,10 +854,10 @@ def _render_today_board() -> None:
         inset: -2px;
         z-index: -1;
         border-radius: 10px;
-        background: var(--frozen-bg-light);
+        background: rgba(246, 248, 255, 0.96);
         backdrop-filter: saturate(165%) blur(14px);
         -webkit-backdrop-filter: saturate(165%) blur(14px);
-        box-shadow: 6px 0 12px rgba(20, 20, 40, 0.12);
+        box-shadow: 6px 0 12px rgba(20, 20, 40, 0.18);
     }
     @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
         .board-col-sticky::before {
@@ -841,8 +866,8 @@ def _render_today_board() -> None:
     }
     @media (prefers-color-scheme: dark) {
         .board-col-sticky::before {
-            background: var(--frozen-bg-dark);
-            box-shadow: 6px 0 14px rgba(0, 0, 0, 0.46);
+            background: rgba(20, 22, 30, 0.95);
+            box-shadow: 6px 0 14px rgba(0, 0, 0, 0.52);
         }
         .board-col-head {
             border-color: #3a3a48;
@@ -856,8 +881,8 @@ def _render_today_board() -> None:
             color: #bbbbcb;
         }
     }
-    .board-col-sticky-1 { left: 0; }
-    .board-col-sticky-2 { left: calc(var(--col-width) + var(--grid-gap)); }
+    .board-col-sticky-1 { left: 0; z-index: 82; }
+    .board-col-sticky-2 { left: calc(var(--col1-width) + var(--grid-gap)); z-index: 84; }
     .board-col-sticky::after {
         content: "";
         position: absolute;
@@ -873,6 +898,9 @@ def _render_today_board() -> None:
     }
     .board-col-sticky-2::after {
         box-shadow: 6px 0 12px var(--frozen-divider-light);
+    }
+    .board-col-sticky-1::after {
+        box-shadow: 4px 0 10px var(--frozen-divider-light);
     }
     @media (prefers-color-scheme: dark) {
         .board-col-sticky::after {
@@ -901,6 +929,7 @@ def _render_today_board() -> None:
         font-weight: 700;
         line-height: 1.2;
         pointer-events: auto;
+        width: 100%;
     }
     .col-head-toggle {
         display: flex;
@@ -942,6 +971,11 @@ def _render_today_board() -> None:
         font-size: 11px;
         color: #7b7b95;
         font-weight: 500;
+    }
+    .board-col-col1 .board-col-subtitle,
+    .board-col-col2 .board-col-subtitle {
+        display: block;
+        min-height: 15px;
     }
     .post-stack {
         display: flex;
@@ -1074,6 +1108,12 @@ def _render_today_board() -> None:
         filter: blur(1px);
         pointer-events: none;
     }
+    .board-root:has(#toggle-col1:checked) .board-col-col1 .board-col-head,
+    .board-root:has(#toggle-col1:checked) .board-col-col1 .post-stack,
+    .board-root:has(#toggle-col2:checked) .board-col-col2 .board-col-head,
+    .board-root:has(#toggle-col2:checked) .board-col-col2 .post-stack {
+        visibility: hidden;
+    }
     .board-root:has(#toggle-col1:checked) .board-control-published {
         opacity: 0.62;
         border-color: #8a8ade;
@@ -1087,6 +1127,10 @@ def _render_today_board() -> None:
     }
     .board-root:has(#toggle-col2:checked) .board-control-scheduled::after {
         content: "已排程 >>>";
+    }
+    .board-root:has(#toggle-col1:checked) .board-col-col1 .board-col-head .col-head-hint,
+    .board-root:has(#toggle-col2:checked) .board-col-col2 .board-col-head .col-head-hint {
+        color: #4e4ea8;
     }
     @media (prefers-color-scheme: dark) {
         .board-control-btn {
