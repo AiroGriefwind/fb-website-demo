@@ -597,3 +597,111 @@
 
 下一步:
 - 排查并固定 `http://<电脑局域网IP>:8501` 的手机访问链路（监听地址、防火墙、端口放行）。
+
+日期时间(HKT): 2026-03-13
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@4456ad4
+完成内容:
+- [本仓库] 调整九列看板卡片宽度策略：将卡片宽度从“随列拉伸（`width: 100%`）”改为“固定宽度变量”。
+- [本仓库] 前两列 sticky 卡片设为更宽（`--card-width-main`），后七列设为较窄（`--card-width-category`），并在桌面/平板/手机断点分别给出固定值。
+- [本仓库] 标题改为单行省略样式（`white-space: nowrap; text-overflow: ellipsis; overflow: hidden;`）。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 与 `docs/governance/PROGRESS.MD` 无新增问题。
+
+风险/阻塞:
+- 标题单行后信息密度提高，但长标题可见字数减少；如需兼顾可读性可后续增加 hover tooltip 或二级详情。
+
+下一步:
+- 根据你电脑端与手机端截图反馈微调 `--card-width-main` / `--card-width-category` 数值（建议每次 6~10px 步进）。
+
+日期时间(HKT): 2026-03-13
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@4456ad4
+完成内容:
+- [本仓库] 按反馈移除“前两列卡片更宽”策略，九列统一使用单一列宽变量 `--col-width`。
+- [本仓库] 将看板栅格改为 `grid-template-columns: repeat(9, var(--col-width))`，并同步 sticky 第2列偏移计算为 `var(--col-width) + gap`。
+- [本仓库] 卡片宽度恢复与列宽绑定（`width: 100%`），列头与卡片统一宽度，不再出现前两列列头明显宽于卡片的问题。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 与 `docs/governance/PROGRESS.MD` 无新增问题。
+
+风险/阻塞:
+- 统一列宽后，桌面端首两列可视信息密度相较上一版略降（属于预期取舍）。
+
+下一步:
+- 依据你下一轮截图反馈，仅微调统一列宽变量 `--col-width`（桌面/平板/手机三个断点）。
+
+日期时间(HKT): 2026-03-13
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@4456ad4
+完成内容:
+- [本仓库] 为前两列 sticky（`已發佈`/`已排程`）新增列级收起交互：点击列头可将整列折叠为最左侧 sticky 图标，再次点击恢复展开。
+- [本仓库] 列头交互文案与图标升级：展开态显示“`⇅ + 列名 + <<<`”提示可收起；收起态保留图标，hover 时图标切换为“`>>>`”提示可展开。
+- [本仓库] 折叠布局通过 CSS 状态控制实现：动态调整前两列宽度变量（`--col1-width`/`--col2-width`）与第2列 sticky 偏移，保证收起后第3列内容可见面积提升。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 与 `docs/governance/PROGRESS.MD` 无新增问题。
+
+风险/阻塞:
+- 当前折叠状态为前端会话内状态（页面刷新后重置）；如需跨刷新持久化，需后续接入 `st.session_state` 或 URL 参数同步。
+
+下一步:
+- 让你在桌面端与手机端实测“收起/展开 + 横向滑动”组合体验，按反馈微调折叠态图标尺寸和列宽。
+
+日期时间(HKT): 2026-03-13
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@4456ad4
+完成内容:
+- [本仓库] 修复分类筛选组件告警：移除 `st.multiselect` 的 `default` 与 `Session State` 同时赋值冲突，仅通过 `key` + `st.session_state` 初始化选中项。
+- [本仓库] 修复前两列列头点击无反应：折叠样式选择器改为 `board-root:has(#toggle-colX:checked)`，并将折叠状态输入与看板放在统一容器下，避免 HTML 结构层级导致的 sibling 选择失效。
+- [本仓库] 交互图标从示例符号替换为更贴切的横向控制图标 `⟷`；收起态 hover 仍显示 `>>>` 作为展开提示。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 与 `docs/governance/PROGRESS.MD` 无新增问题。
+
+风险/阻塞:
+- 折叠交互依赖 CSS `:has`，在现代浏览器兼容良好；若遇到极旧浏览器需降级为纯 Streamlit 按钮控制。
+
+下一步:
+- 请你在目标浏览器实测列头点击与折叠/展开反馈；若需要我可再把“收起态仅显示图标”区域做得更窄（例如 30px）。
+
+日期时间(HKT): 2026-03-13
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@4456ad4
+完成内容:
+- [本仓库] 按反馈将“隐藏前两列”入口从列头迁移到看板左侧独立控制栏，避免折叠后在原两列位置保留 sticky 小残影挡视野。
+- [本仓库] 为两列使用不同图标：`已發佈=📰`、`已排程=📅`，并保留 hover 提示（隐藏态提示 `>>>`，显示态提示 `<<<`）。
+- [本仓库] 调整折叠布局逻辑：隐藏时直接 `display:none` 对应列，并按“隐藏第1列/隐藏第2列/两列都隐藏”三种状态切换 grid 模板，最大化第3列以后可视区域。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 与 `docs/governance/PROGRESS.MD` 无新增问题。
+
+风险/阻塞:
+- 控制栏图标使用 emoji，不同系统字体渲染风格会略有差异；如需统一可替换为纯 SVG/字符图标。
+
+下一步:
+- 让你在手机端验证“两列全隐藏”时的实际可视宽度提升，必要时再压缩左侧控制栏宽度（40→34 或更小）。
+
+日期时间(HKT): 2026-03-13
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@4456ad4
+完成内容:
+- [本仓库] 保留左侧独立控制栏的同时，恢复前两列列头可点击交互：列头左侧显示对应图标与列名（`📰 已發佈`、`📅 已排程`），右侧显示 `<<<` 提示。
+- [本仓库] 为前两列显隐增加动效：隐藏时向左平移并渐隐，显示时向右回位并渐显；同时列宽变量平滑过渡，减少突兀跳变。
+- [本仓库] 前两列列头与左侧控制栏共享同一显隐开关（checkbox），保证两处入口行为一致。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 与 `docs/governance/PROGRESS.MD` 无新增问题。
+
+风险/阻塞:
+- 列宽过渡依赖浏览器对 `grid-template-columns` 动画支持；在少数旧浏览器上可能退化为无动画切换，但功能不受影响。
+
+下一步:
+- 让你在目标浏览器复测“列头点击 + 左侧按钮点击”一致性与动画顺滑度，必要时微调动画时长（当前 0.24s）。
