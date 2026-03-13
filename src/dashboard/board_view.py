@@ -248,6 +248,8 @@ def render_today_board() -> None:
 
     st.caption(f"日期（HKT）：{now_hkt:%Y-%m-%d}｜横向滚动查看全部栏目，前两列固定。")
     category_css = []
+    entertainment_cls = CATEGORY_CLASS_MAP.get("娛樂", "")
+    entertainment_tokens = category_style_tokens("娛樂")
     for cat in CATEGORY_ORDER:
         cls = CATEGORY_CLASS_MAP.get(cat)
         if not cls:
@@ -259,12 +261,30 @@ def render_today_board() -> None:
                 background: {tokens['header_bg']};
                 border-color: {tokens['header_border']};
             }}
-            .post-card-{cls} {{
+            .board-col-{cls} .post-card-{cls} {{
                 background: {tokens['card_bg']};
                 border-color: {tokens['card_border']};
             }}
             """
         )
+    category_css.append(
+        f"""
+        /* Display mode (current default):
+           - Published/Scheduled: white cards except Entertainment
+           - Pending columns: keep category colors
+           Keep category class markers for future user-selectable display modes. */
+        .board-col-col1 .post-card,
+        .board-col-col2 .post-card {{
+            background: #ffffff;
+            border-color: #dcdcf6;
+        }}
+        .board-col-col1 .post-card-{entertainment_cls},
+        .board-col-col2 .post-card-{entertainment_cls} {{
+            background: {entertainment_tokens['card_bg']};
+            border-color: {entertainment_tokens['card_border']};
+        }}
+        """
+    )
     board_html = """
     <style>
     .board-scroll {
