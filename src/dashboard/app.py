@@ -644,7 +644,8 @@ def _build_column_html(
     toggle_id: str = "",
     toggle_icon: str = "",
 ) -> str:
-    subtitle_html = f'<div class="board-col-subtitle">{escape(subtitle)}</div>' if subtitle else ""
+    subtitle_text = escape(subtitle) if subtitle else "&nbsp;"
+    subtitle_html = f'<div class="board-col-subtitle">{subtitle_text}</div>'
     sticky_cls = f" board-col-sticky board-col-sticky-{sticky_slot}" if sticky_slot is not None else ""
     sticky_key_cls = f" board-col-col{sticky_slot}" if sticky_slot in (1, 2) else ""
     body_html = "".join(cards_html) if cards_html else '<div class="day-empty">暂无贴文</div>'
@@ -825,7 +826,7 @@ def _render_today_board() -> None:
     .board-col {
         min-height: 140px;
         position: relative;
-        overflow: hidden;
+        overflow: visible;
         width: var(--col-width);
         min-width: var(--col-width);
         max-width: var(--col-width);
@@ -1101,12 +1102,14 @@ def _render_today_board() -> None:
         transform: translateX(-24px);
         filter: blur(1px);
         pointer-events: none;
+        overflow: hidden;
     }
     .board-root:has(#toggle-col2:checked) .board-col-col2 {
         opacity: 0;
         transform: translateX(-20px);
         filter: blur(1px);
         pointer-events: none;
+        overflow: hidden;
     }
     .board-root:has(#toggle-col1:checked) .board-col-col1 .board-col-head,
     .board-root:has(#toggle-col1:checked) .board-col-col1 .post-stack,

@@ -741,3 +741,21 @@
 
 下一步:
 - 推送到 demo 仓库后让你在桌面/手机复测“首两列等宽 + 无穿透 + 折叠动画”三项。
+
+日期时间(HKT): 2026-03-13
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@4848673
+完成内容:
+- [本仓库] 继续修复前两列穿透与宽度观感问题：将列容器从 `overflow: hidden` 调整为 `overflow: visible`，确保 sticky 列的列缝遮挡层（`::after`）不会被裁切。
+- [本仓库] 隐藏动画状态下对前两列单独回设 `overflow: hidden`，避免折叠过程中卡片内容外溢。
+- [本仓库] 统一列头结构：前两列补齐副标题占位行（`&nbsp;`），与后七列“列名 + 次级行”保持一致，减少“前两列看起来更窄”的视觉偏差。
+
+验证结果:
+- `python -m py_compile src/dashboard/app.py` 通过。
+- `read_lints` 检查 `src/dashboard/app.py` 与 `docs/governance/PROGRESS.MD` 无新增问题。
+
+风险/阻塞:
+- 视觉层的磨砂 + 阴影遮挡仍受浏览器渲染差异影响，极少数环境可能存在轻微色边。
+
+下一步:
+- 让你在本地与线上同时复测“第一二列间穿透”与“列头宽度一致性”，必要时再切换为纯实色遮挡以彻底消除色边。
