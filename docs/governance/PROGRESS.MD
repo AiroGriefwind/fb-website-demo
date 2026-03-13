@@ -348,7 +348,7 @@
 
 日期时间(HKT): 2026-03-12
 负责人/LLM: wangz / gpt-5.3-codex
-分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@<待填新commit>
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@b90e20d9bcf6b699fdca70db5a2366520d72400c
 完成内容:
 - [本仓库] 更新 `data/samples/dashboard_published.json`、`data/samples/dashboard_scheduled.json`、`data/samples/dashboard_pending.json` 为 3/12 演示样本；第3~9列分类（社會事/大視野/兩岸/法庭事/消費/娛樂/心韓）均至少 3 条，且满足当前过去24小时展示窗口。
 - [本仓库] 强化冻结列视觉隔离：前两列 sticky 区增加磨砂背景（`backdrop-filter`）与阴影分隔；在不支持磨砂时回退到主题背景，降低滚动时透底和误触。
@@ -582,3 +582,18 @@
 
 下一步:
 - 在手机竖屏实测横向滑动体验；如仍感觉遮挡，可继续引入“手机端 sticky 宽度档位（紧凑/标准）”开关。
+
+日期时间(HKT): 2026-03-13
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@b90e20d9bcf6b699fdca70db5a2366520d72400c
+完成内容:
+- [demo仓库] 已将本次移动端 sticky 优化与 0313 样本数据更新推送到 `AiroGriefwind/fb-website-demo` 的 `main` 分支（commit: `b90e20d9bcf6b699fdca70db5a2366520d72400c`）。
+
+验证结果:
+- `git push public HEAD:main` 成功，远端由 `a883ddc` 更新至 `b90e20d`。
+
+风险/阻塞:
+- 若手机继续出现超时，问题将主要位于局域网连通、防火墙或 Streamlit 监听策略，而非代码版本。
+
+下一步:
+- 排查并固定 `http://<电脑局域网IP>:8501` 的手机访问链路（监听地址、防火墙、端口放行）。
