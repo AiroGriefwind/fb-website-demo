@@ -55,7 +55,11 @@ def _card_html(
         lock_title = "取消锁定该时间窗口" if is_locked else "锁定该时间窗口"
         lock_html = (
             f'<button type="button" class="post-card-lock-btn{lock_state_cls}" data-schedule-key="{escape(lock_schedule_key)}" '
-            f'title="{escape(lock_title)}" aria-label="{escape(lock_title)}">🔒</button>'
+            f'title="{escape(lock_title)}" aria-label="{escape(lock_title)}">'
+            f'<svg class="post-card-lock-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">'
+            f'<path d="M17 10h-1V7a4 4 0 0 0-8 0v3H7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2zm-6 6.73V18a1 1 0 0 0 2 0v-1.27a2 2 0 1 0-2 0zM10 10V7a2 2 0 0 1 4 0v3h-4z"></path>'
+            f"</svg>"
+            f"</button>"
         )
         unschedule_html = ""
         if unschedule_key:
@@ -852,10 +856,16 @@ def render_today_board() -> None:
         justify-content: center;
         text-decoration: none;
         box-shadow: 0 2px 6px rgba(62, 62, 132, 0.12);
+        color: #5a5ab1;
         line-height: 1;
-        font-size: 12px;
-        opacity: 0.55;
+        opacity: 0.75;
         transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease, opacity .12s ease;
+    }
+    .post-card-lock-icon {
+        width: 13px;
+        height: 13px;
+        display: block;
+        fill: currentColor;
     }
     .post-card-return-btn {
         position: absolute;
@@ -880,6 +890,7 @@ def render_today_board() -> None:
     .post-card-lock-btn.is-locked {
         opacity: 1;
         border-color: #8a8ade;
+        background: #f1efff;
         box-shadow: 0 4px 10px rgba(62, 62, 132, 0.2);
     }
     .post-card-schedule-btn:hover {
@@ -972,8 +983,8 @@ def render_today_board() -> None:
             width: 20px;
             height: 20px;
             top: 5px;
-            font-size: 11px;
         }
+        .post-card-lock-icon { width: 12px; height: 12px; }
         .post-card-return-btn {
             width: 20px;
             height: 20px;

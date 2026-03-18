@@ -1078,3 +1078,20 @@
 
 下一步:
 - 由你在 demo 环境确认折叠标题统计与展开明细是否满足编辑团队阅读习惯（必要时可改为表格样式）。
+
+日期时间(HKT): 2026-03-18 22:32
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@<待填新commit>
+完成内容:
+- [本仓库] 修复线上 `🔒` 图标显示异常：将已排程卡片顶部锁按钮从 emoji 字形改为内嵌 SVG path，避免不同系统字体缺字导致空白圆按钮。
+- [本仓库] 同步微调锁按钮样式（可见度、锁定态底色、移动端尺寸）以保证线上/本地视觉一致性。
+
+验证结果:
+- `python -m py_compile src/dashboard/board_view.py` 通过。
+- `read_lints` 检查 `src/dashboard/board_view.py` 无新增问题。
+
+风险/阻塞:
+- 无新增阻塞；该方案不依赖系统 emoji 字体，跨平台稳定性更好。
+
+下一步:
+- 推送到 demo 仓库并让线上刷新确认锁图标可见。
