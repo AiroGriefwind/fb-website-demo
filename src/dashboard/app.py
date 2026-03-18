@@ -29,8 +29,8 @@ def main() -> None:
 
     init_settings_state()
     render_sidebar()
-    render_settings_dialog_if_needed()
     render_today_board()
+    render_settings_dialog_if_needed()
 
 
 if __name__ == "__main__":

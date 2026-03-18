@@ -988,3 +988,93 @@
 
 下一步:
 - 由你在 demo 部署环境验证“第3~9列点击 `📅` 即拉起排程弹窗”主链路；若需要可再放大按钮尺寸或扩展到整卡点击排程。
+
+日期时间(HKT): 2026-03-18 21:56
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@<待填新commit>
+完成内容:
+- [本仓库] 排程窗口参数化：在 `設置` 中新增“排程窗口（分钟）”可选项（5/10/15/20/30），排程弹窗分钟选项与默认时间对齐该设置。
+- [本仓库] 新增“锁定窗口”能力：排程弹窗加入 `🔒 锁定` 开关；`已排程` 卡片顶部（12 点位）新增 `🔒` 可切换按钮（点击锁定/取消锁定）。
+- [本仓库] 更新排程写入规则：锁定贴文不参与顺延；若目标时间窗口已被锁定则拒绝写入；插入新排程时对后续未锁定贴文按窗口顺延并自动避开锁定窗口。
+
+验证结果:
+- `python -m py_compile` 覆盖 `src/dashboard/` 相关模块通过。
+- `read_lints` 检查 `src/dashboard/board_view.py`、`sidebar_view.py`、`scheduling_utils.py`、`media_utils.py`、`frontend_templates.py` 无新增问题。
+
+风险/阻塞:
+- 当前锁定状态仅落在本地样本数据字段 `is_locked`；切换到 API 模式时需后端同步支持该字段与冲突校验语义。
+
+下一步:
+- 在 demo 环境复测三条链路：窗口粒度切换、锁定窗口拒绝写入、顺延时跳过锁定贴文。
+
+日期时间(HKT): 2026-03-18 22:02
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@<待填新commit>
+完成内容:
+- [本仓库] 设置弹窗新增“确认排程窗口”按钮：将窗口选择改为草稿值（`cfg_schedule_window_minutes`），仅点击确认后写入生效值并触发 rerun 刷新。
+- [本仓库] 修复“点排程按钮却弹设置弹窗”问题：`app.py` 调整为先渲染看板再判定设置弹窗；并在排程/锁定动作进入时强制关闭设置弹窗状态。
+- [本仓库] 增加对话框并发保护：`render_settings_dialog_if_needed()` 在排程弹窗打开时直接跳过，避免 Streamlit 的“同轮仅允许一个 dialog”异常。
+
+验证结果:
+- `python -m py_compile` 覆盖 `src/dashboard/` 相关模块通过。
+- `read_lints` 检查 `src/dashboard/app.py`、`board_view.py`、`sidebar_view.py` 无新增问题。
+
+风险/阻塞:
+- 若用户通过浏览器地址栏手工注入历史 query 参数，仍可能触发非预期弹窗流；当前已在处理后清理 `schedule_pick/lock_toggle` 参数以降低风险。
+
+下一步:
+- 在 demo 环境重点回归“设置确认后刷新粒度 + 排程入口不串弹窗”两条链路。
+
+日期时间(HKT): 2026-03-18 22:12
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@<待填新commit>
+完成内容:
+- [本仓库] 优化顺延算法为“局部挤压链”：只从目标窗口开始逐窗向后传递冲突，不再无差别推动所有后续贴文；当下一窗口为空时在此终止，不影响更后面的排程。
+- [本仓库] 在 `已排程` 卡片新增右上角 `🔙` 入口，支持“取消排程并返回已出未排”；返回后恢复 `review_status=waiting`，写回 pending 数据集。
+- [本仓库] 扩展前端桥接参数：新增 `unschedule_pick` 动作通道及隐藏提交按钮，保持与 `schedule_pick/lock_toggle` 同样的当前页无跳转交互。
+
+验证结果:
+- `python -m py_compile` 覆盖 `src/dashboard/` 相关模块通过。
+- `read_lints` 检查 `src/dashboard/app.py`、`board_view.py`、`sidebar_view.py`、`scheduling_utils.py`、`frontend_templates.py` 无新增问题。
+
+风险/阻塞:
+- 取消排程后当前实现将贴文 `publish_time` 更新为“当前时间”，确保能回到已出未排列可见窗口；若后续需要保留原时间语义，可改为额外字段记录“原排程时间”。
+
+下一步:
+- 在 demo 环境回归“9:30 挤到 9:45 但 10:00 不动”的窗口链路与 `🔙` 返回链路（分类归位 + 可再次排程）。
+
+日期时间(HKT): 2026-03-18 22:18
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@<待填新commit>
+完成内容:
+- [本仓库] 修复设置/排程串弹窗：点击 `設置` 时强制关闭排程弹窗状态，并在排程弹窗渲染函数中增加“设置打开即跳过”的硬保护。
+- [本仓库] 修复时间窗口下拉：对“所选日期=今天”场景仅展示未来时间槽（例如当前 10:15 不再显示 10:10 及更早）；无可用槽时自动切到次日。
+- [本仓库] 增加后端兜底校验：排程写入阶段拒绝过去时间，即便前端状态异常也不会写入历史窗口。
+
+验证结果:
+- `python -m py_compile` 覆盖 `src/dashboard/` 相关模块通过。
+- `read_lints` 检查 `src/dashboard/app.py`、`board_view.py`、`sidebar_view.py`、`scheduling_utils.py` 无新增问题。
+
+风险/阻塞:
+- 当前“过去时间过滤”以 HKT 当前时间为准；若后续引入多时区协作，需要在设置层明确时区提示与换算策略。
+
+下一步:
+- 在 demo 环境复测“点设置不串排程 + 今天仅可选未来窗口”两条关键链路。
+
+日期时间(HKT): 2026-03-18 22:25
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@<待填新commit>
+完成内容:
+- [本仓库] 新增“排程影响报告”折叠 UI（位于分类筛选器下方）：折叠标题展示“顺延数量 + 锁定跳过数量 + 锁定时间列表”。
+- [本仓库] 排程核心函数返回本次影响明细：顺延文章（标题/原时间/新时间）与因锁定跳过的文章（标题/锁定时间），供 UI 展开后查看。
+- [本仓库] 成功排程后将影响明细写入 `st.session_state`，确保用户可即时回顾本次窗口挤压的实际波及范围。
+
+验证结果:
+- `python -m py_compile` 覆盖 `src/dashboard/` 相关模块通过。
+- `read_lints` 检查 `src/dashboard/board_view.py`、`scheduling_utils.py` 无新增问题。
+
+风险/阻塞:
+- 当前报告展示的是“最近一次排程动作”；若后续需要跨会话审计，建议将该明细同步写入运行日志或后端事件表。
+
+下一步:
+- 由你在 demo 环境确认折叠标题统计与展开明细是否满足编辑团队阅读习惯（必要时可改为表格样式）。

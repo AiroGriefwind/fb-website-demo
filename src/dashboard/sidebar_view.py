@@ -9,7 +9,14 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from src.bot.review_bot import TelegramAPIError, get_bot_profile, send_text_message
-from src.dashboard.config import CHAT_ID_ENV, HKT_TZ, TOKEN_ENV, TRENDS_WEB_URL
+from src.dashboard.config import (
+    CHAT_ID_ENV,
+    DEFAULT_SCHEDULE_WINDOW_MINUTES,
+    HKT_TZ,
+    SCHEDULE_WINDOW_OPTIONS,
+    TOKEN_ENV,
+    TRENDS_WEB_URL,
+)
 from src.dashboard.data_utils import (
     load_trending_keywords,
     load_trending_keywords_from_rss,
@@ -23,6 +30,8 @@ def init_settings_state() -> None:
     st.session_state.setdefault("cfg_token", os.getenv(TOKEN_ENV, ""))
     st.session_state.setdefault("cfg_chat_id", os.getenv(CHAT_ID_ENV, ""))
     st.session_state.setdefault("settings_open", False)
+    st.session_state.setdefault("schedule_window_minutes", DEFAULT_SCHEDULE_WINDOW_MINUTES)
+    st.session_state.setdefault("cfg_schedule_window_minutes", st.session_state.get("schedule_window_minutes"))
 
 
 def _render_settings_content() -> None:
@@ -54,6 +63,21 @@ def _render_settings_content() -> None:
                     st.success(f"发送成功，message_id={result.message_id}")
                 except (ValueError, TelegramAPIError, OSError) as exc:
                     st.error(f"发送失败: {exc}")
+
+    st.divider()
+    st.caption("排程设置")
+    st.selectbox(
+        "排程窗口（分钟）",
+        options=SCHEDULE_WINDOW_OPTIONS,
+        key="cfg_schedule_window_minutes",
+        help="仅确认后生效。生效后会刷新看板分钟粒度。",
+    )
+    if st.button("确认排程窗口", use_container_width=True):
+        chosen = int(st.session_state.get("cfg_schedule_window_minutes", DEFAULT_SCHEDULE_WINDOW_MINUTES))
+        st.session_state["schedule_window_minutes"] = chosen
+        st.session_state["settings_open"] = False
+        st.session_state["board_flash"] = f"排程窗口已更新为 {chosen} 分钟。"
+        st.rerun()
 
 
 def _render_trends_widget(trends: list[dict[str, Any]], sort_mode: str) -> None:
@@ -353,6 +377,11 @@ def render_sidebar() -> None:
 
         st.divider()
         if st.button("設置", use_container_width=True):
+            st.session_state["cfg_schedule_window_minutes"] = int(
+                st.session_state.get("schedule_window_minutes", DEFAULT_SCHEDULE_WINDOW_MINUTES)
+            )
+            st.session_state["schedule_dialog_open"] = False
+            st.session_state["schedule_pick_item_id"] = ""
             st.session_state["settings_open"] = True
 
         if not hasattr(st, "dialog"):
@@ -362,6 +391,8 @@ def render_sidebar() -> None:
 
 def render_settings_dialog_if_needed() -> None:
     if not hasattr(st, "dialog"):
+        return
+    if st.session_state.get("schedule_dialog_open", False):
         return
 
     @st.dialog("設置")

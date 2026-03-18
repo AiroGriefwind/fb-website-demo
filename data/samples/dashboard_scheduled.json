@@ -56,14 +56,6 @@
     "popular_count": 5
   },
   {
-    "title": "兩岸已排程示例貼文 2026-03-18 #2",
-    "category": "兩岸",
-    "thumbnail": "data/samples/Dummy1.png",
-    "Post URL": "https://example.com/scheduled?id=910031",
-    "publish_time": "2026-03-18T15:00:00Z",
-    "popular_count": 1
-  },
-  {
     "title": "法庭事已排程示例貼文 2026-03-18 #1",
     "category": "法庭事",
     "thumbnail": "data/samples/Dummy1.png",
@@ -76,40 +68,46 @@
     "category": "法庭事",
     "thumbnail": "data/samples/Dummy1.png",
     "Post URL": "https://example.com/scheduled?id=910041",
-    "publish_time": "2026-03-18T17:00:00Z",
-    "popular_count": 2
+    "publish_time": "2026-03-18T19:00:00Z",
+    "popular_count": 2,
+    "updated_at": "2026-03-18T14:06:15.252988Z"
   },
   {
     "title": "消費已排程示例貼文 2026-03-18 #1",
     "category": "消費",
     "thumbnail": "data/samples/Dummy1.png",
     "Post URL": "https://example.com/scheduled?id=910050",
-    "publish_time": "2026-03-18T15:00:00Z",
-    "popular_count": 2
+    "publish_time": "2026-03-18T17:15:00Z",
+    "popular_count": 2,
+    "is_locked": false,
+    "updated_at": "2026-03-18T14:06:15.252988Z"
   },
   {
     "title": "消費已排程示例貼文 2026-03-18 #2",
     "category": "消費",
     "thumbnail": "data/samples/Dummy1.png",
     "Post URL": "https://example.com/scheduled?id=910051",
-    "publish_time": "2026-03-18T19:00:00Z",
-    "popular_count": 3
+    "publish_time": "2026-03-18T21:00:00Z",
+    "popular_count": 3,
+    "updated_at": "2026-03-18T14:06:15.252988Z"
   },
   {
     "title": "心韓已排程示例貼文 2026-03-18 #1",
     "category": "心韓",
     "thumbnail": "data/samples/Dummy1.png",
     "Post URL": "https://example.com/scheduled?id=910060",
-    "publish_time": "2026-03-18T17:00:00Z",
-    "popular_count": 3
+    "publish_time": "2026-03-18T19:15:00Z",
+    "popular_count": 3,
+    "updated_at": "2026-03-18T14:06:15.252988Z"
   },
   {
     "title": "心韓已排程示例貼文 2026-03-18 #2",
     "category": "心韓",
     "thumbnail": "data/samples/Dummy1.png",
     "Post URL": "https://example.com/scheduled?id=910061",
-    "publish_time": "2026-03-18T21:00:00Z",
-    "popular_count": 4
+    "publish_time": "2026-03-18T23:00:00Z",
+    "popular_count": 4,
+    "updated_at": "2026-03-18T14:06:15.252988Z"
   },
   {
     "item_id": "pending-20260318-016",
@@ -166,10 +164,10 @@
     "title": "社會事已出未排示例貼文 2026-03-18 #2",
     "thumbnail": "data/samples/Dummy1.png",
     "Post URL": "https://example.com/pending?id=960002",
-    "publish_time": "2026-03-19T11:25:00Z",
+    "publish_time": "2026-03-19T13:25:00Z",
     "popular_count": 2,
     "review_status": "scheduled",
-    "updated_at": "2026-03-18T11:20:41.660265Z"
+    "updated_at": "2026-03-18T14:06:15.252988Z"
   },
   {
     "item_id": "pending-20260318-004",
@@ -182,5 +180,121 @@
     "popular_count": 2,
     "review_status": "scheduled",
     "updated_at": "2026-03-18T11:21:16.072462Z"
+  },
+  {
+    "item_id": "pending-20260318-005",
+    "run_id": "demo-20260318",
+    "category": "大視野",
+    "title": "大視野已出未排示例貼文 2026-03-18 #2",
+    "thumbnail": "data/samples/Dummy1.png",
+    "Post URL": "https://example.com/pending?id=960005",
+    "publish_time": "2026-03-18T14:00:00Z",
+    "popular_count": 3,
+    "review_status": "scheduled",
+    "updated_at": "2026-03-18T14:04:19.508545Z",
+    "is_locked": false
+  },
+  {
+    "item_id": "pending-20260318-007",
+    "run_id": "demo-20260318",
+    "category": "兩岸",
+    "title": "兩岸已出未排示例貼文 2026-03-18 #1",
+    "thumbnail": "data/samples/Dummy1.png",
+    "Post URL": "https://example.com/pending?id=960007",
+    "publish_time": "2026-03-18T16:15:00Z",
+    "popular_count": 3,
+    "review_status": "scheduled",
+    "updated_at": "2026-03-18T14:27:04.542881Z",
+    "is_locked": false
+  },
+  {
+    "item_id": "pending-20260318-008",
+    "run_id": "demo-20260318",
+    "category": "兩岸",
+    "title": "兩岸已出未排示例貼文 2026-03-18 #2",
+    "thumbnail": "data/samples/Dummy1.png",
+    "Post URL": "https://example.com/pending?id=960008",
+    "publish_time": "2026-03-18T16:00:00Z",
+    "popular_count": 4,
+    "review_status": "scheduled",
+    "updated_at": "2026-03-18T14:27:04.542881Z",
+    "is_locked": false
+  },
+  {
+    "item_id": "pending-20260318-010",
+    "run_id": "demo-20260318",
+    "category": "法庭事",
+    "title": "法庭事已出未排示例貼文 2026-03-18 #1",
+    "thumbnail": "data/samples/Dummy1.png",
+    "Post URL": "https://example.com/pending?id=960010",
+    "publish_time": "2026-03-18T15:45:00Z",
+    "popular_count": 4,
+    "review_status": "scheduled",
+    "updated_at": "2026-03-18T14:27:04.542881Z",
+    "is_locked": false
+  },
+  {
+    "item_id": "pending-20260318-003",
+    "run_id": "demo-20260318",
+    "category": "社會事",
+    "title": "社會事已出未排示例貼文 2026-03-18 #3",
+    "thumbnail": "data/samples/Dummy1.png",
+    "Post URL": "https://example.com/pending?id=960003",
+    "publish_time": "2026-03-18T15:30:00Z",
+    "popular_count": 3,
+    "review_status": "scheduled",
+    "updated_at": "2026-03-18T14:27:04.542881Z",
+    "is_locked": false
+  },
+  {
+    "item_id": "pending-20260318-006",
+    "run_id": "demo-20260318",
+    "category": "大視野",
+    "title": "大視野已出未排示例貼文 2026-03-18 #3",
+    "thumbnail": "data/samples/Dummy1.png",
+    "Post URL": "https://example.com/pending?id=960006",
+    "publish_time": "2026-03-18T15:15:00Z",
+    "popular_count": 4,
+    "review_status": "scheduled",
+    "updated_at": "2026-03-18T14:27:04.542881Z",
+    "is_locked": false
+  },
+  {
+    "item_id": "pending-20260318-009",
+    "run_id": "demo-20260318",
+    "category": "兩岸",
+    "title": "兩岸已出未排示例貼文 2026-03-18 #3",
+    "thumbnail": "data/samples/Dummy1.png",
+    "Post URL": "https://example.com/pending?id=960009",
+    "publish_time": "2026-03-18T15:00:00Z",
+    "popular_count": 5,
+    "review_status": "scheduled",
+    "updated_at": "2026-03-18T14:27:04.542881Z",
+    "is_locked": false
+  },
+  {
+    "title": "兩岸已排程示例貼文 2026-03-18 #2",
+    "category": "兩岸",
+    "thumbnail": "data/samples/Dummy1.png",
+    "Post URL": "https://example.com/scheduled?id=910031",
+    "publish_time": "2026-03-18T14:45:00Z",
+    "popular_count": 1,
+    "updated_at": "2026-03-18T14:26:59.199441Z",
+    "item_id": "unscheduled-1773843244",
+    "review_status": "scheduled",
+    "is_locked": true
+  },
+  {
+    "item_id": "pending-20260318-011",
+    "run_id": "demo-20260318",
+    "category": "法庭事",
+    "title": "法庭事已出未排示例貼文 2026-03-18 #2",
+    "thumbnail": "data/samples/Dummy1.png",
+    "Post URL": "https://example.com/pending?id=960011",
+    "publish_time": "2026-03-18T14:30:00Z",
+    "popular_count": 5,
+    "review_status": "scheduled",
+    "updated_at": "2026-03-18T14:27:04.542881Z",
+    "is_locked": false
   }
 ]
