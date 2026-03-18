@@ -49,8 +49,9 @@ def parse_publish_time(value: str) -> datetime | None:
         return None
 
 
-def round_up_to_5_minutes(dt: datetime) -> datetime:
-    next_mark = ((dt.minute + 4) // 5) * 5
+def round_up_to_window(dt: datetime, window_minutes: int) -> datetime:
+    step = int(window_minutes) if int(window_minutes) > 0 else 10
+    next_mark = ((dt.minute + step - 1) // step) * step
     if next_mark >= 60:
         dt = dt.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
     else:

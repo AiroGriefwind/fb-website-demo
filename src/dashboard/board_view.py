@@ -9,15 +9,33 @@ from typing import Any
 import streamlit as st
 import streamlit.components.v1 as components
 
-from src.dashboard.config import CATEGORY_CLASS_MAP, CATEGORY_ORDER, HKT_TZ
+from src.dashboard.config import (
+    CATEGORY_CLASS_MAP,
+    CATEGORY_ORDER,
+    DEFAULT_SCHEDULE_WINDOW_MINUTES,
+    HKT_TZ,
+    SCHEDULE_WINDOW_OPTIONS,
+)
 from src.dashboard.data_utils import load_pending_base, load_published_items, load_scheduled_items
 from src.dashboard.frontend_templates import build_chip_color_script, build_schedule_pick_script
-from src.dashboard.media_utils import parse_publish_time, resolve_thumbnail_src, round_up_to_5_minutes
-from src.dashboard.scheduling_utils import move_pending_item_to_scheduled
+from src.dashboard.media_utils import parse_publish_time, resolve_thumbnail_src, round_up_to_window
+from src.dashboard.scheduling_utils import (
+    build_scheduled_key,
+    move_pending_item_to_scheduled,
+    move_scheduled_item_to_pending,
+    toggle_scheduled_lock,
+)
 from src.dashboard.style_utils import category_style_tokens
 
 
-def _card_html(item: dict[str, Any], dt_hkt: datetime, schedule_item_id: str = "") -> str:
+def _card_html(
+    item: dict[str, Any],
+    dt_hkt: datetime,
+    schedule_item_id: str = "",
+    lock_schedule_key: str = "",
+    unschedule_key: str = "",
+    is_locked: bool = False,
+) -> str:
     link = escape(str(item.get("Post URL", "#")))
     title = escape(str(item.get("title", "")))
     thumb = escape(resolve_thumbnail_src(str(item.get("thumbnail", ""))))
@@ -25,12 +43,27 @@ def _card_html(item: dict[str, Any], dt_hkt: datetime, schedule_item_id: str = "
     category = str(item.get("category", ""))
     category_cls = CATEGORY_CLASS_MAP.get(category, "")
     card_cls = f" post-card-{category_cls}" if category_cls else ""
-    schedule_action_html = ""
+    card_action_html = ""
     if schedule_item_id:
-        schedule_action_html = (
+        card_action_html = (
             f'<button type="button" class="post-card-schedule-btn" data-item-id="{escape(schedule_item_id)}" '
             f'title="加入排程" aria-label="加入排程">📅</button>'
         )
+        card_cls += " post-card-has-schedule"
+    elif lock_schedule_key:
+        lock_state_cls = " is-locked" if is_locked else ""
+        lock_title = "取消锁定该时间窗口" if is_locked else "锁定该时间窗口"
+        lock_html = (
+            f'<button type="button" class="post-card-lock-btn{lock_state_cls}" data-schedule-key="{escape(lock_schedule_key)}" '
+            f'title="{escape(lock_title)}" aria-label="{escape(lock_title)}">🔒</button>'
+        )
+        unschedule_html = ""
+        if unschedule_key:
+            unschedule_html = (
+                f'<button type="button" class="post-card-return-btn" data-unschedule-key="{escape(unschedule_key)}" '
+                f'title="取消排程并返回已出未排" aria-label="取消排程并返回已出未排">🔙</button>'
+            )
+        card_action_html = lock_html + unschedule_html
         card_cls += " post-card-has-schedule"
     if thumb:
         thumb_html = f'<img class="post-thumb" src="{thumb}" alt="thumbnail"/>'
@@ -38,7 +71,7 @@ def _card_html(item: dict[str, Any], dt_hkt: datetime, schedule_item_id: str = "
         thumb_html = '<div class="post-thumb-placeholder"></div>'
     return (
         f'<div class="post-card{card_cls}">'
-        f"{schedule_action_html}"
+        f"{card_action_html}"
         f'<a class="post-card-link" href="{link}" target="_blank" rel="noopener noreferrer">'
         f'<div class="post-time">{time_text}</div>'
         f"{thumb_html}"
@@ -96,6 +129,10 @@ def _build_column_html(
 def _render_schedule_dialog_if_needed(pending_lookup: dict[str, dict[str, Any]], now_hkt: datetime) -> None:
     if not hasattr(st, "dialog"):
         return
+    if st.session_state.get("settings_open", False):
+        st.session_state["schedule_dialog_open"] = False
+        st.session_state["schedule_pick_item_id"] = ""
+        return
 
     target_item_id = str(st.session_state.get("schedule_pick_item_id", "")).strip()
     is_open = bool(st.session_state.get("schedule_dialog_open", False))
@@ -109,22 +146,27 @@ def _render_schedule_dialog_if_needed(pending_lookup: dict[str, dict[str, Any]],
         st.session_state["schedule_pick_item_id"] = ""
         return
 
-    default_dt = round_up_to_5_minutes(now_hkt + timedelta(minutes=5))
+    raw_window = int(st.session_state.get("schedule_window_minutes", DEFAULT_SCHEDULE_WINDOW_MINUTES))
+    window_minutes = raw_window if raw_window in SCHEDULE_WINDOW_OPTIONS else DEFAULT_SCHEDULE_WINDOW_MINUTES
+    default_dt = round_up_to_window(now_hkt + timedelta(minutes=window_minutes), window_minutes)
     dialog_token = int(st.session_state.get("schedule_dialog_token", 0))
     key_year = f"sched_year_{target_item_id}_{dialog_token}"
     key_month = f"sched_month_{target_item_id}_{dialog_token}"
     key_day = f"sched_day_{target_item_id}_{dialog_token}"
     key_hour = f"sched_hour_{target_item_id}_{dialog_token}"
     key_min = f"sched_min_{target_item_id}_{dialog_token}"
+    key_lock = f"sched_lock_{target_item_id}_{dialog_token}"
     st.session_state.setdefault(key_year, default_dt.year)
     st.session_state.setdefault(key_month, default_dt.month)
     st.session_state.setdefault(key_day, default_dt.day)
     st.session_state.setdefault(key_hour, default_dt.hour)
-    st.session_state.setdefault(key_min, (default_dt.minute // 5) * 5)
+    st.session_state.setdefault(key_min, (default_dt.minute // window_minutes) * window_minutes)
+    st.session_state.setdefault(key_lock, False)
 
     @st.dialog("设置排程时间")
     def _schedule_dialog() -> None:
-        st.caption("点击卡片顶部日历按钮后，请设置发布时间（5 分钟粒度）。")
+        slot_list_text = "/".join([f"{x:02d}" for x in range(0, 60, window_minutes)])
+        st.caption(f"点击卡片顶部日历按钮后，请设置发布时间（{window_minutes} 分钟粒度，仅 {slot_list_text}）。")
         st.write(f"目标贴文：{item.get('title', 'N/A')}")
         components.html(
             """
@@ -143,21 +185,61 @@ def _render_schedule_dialog_if_needed(pending_lookup: dict[str, dict[str, Any]],
             scrolling=False,
         )
 
-        hour_col, min_col = st.columns(2)
+        selected_year = int(st.session_state.get(key_year, default_dt.year))
+        selected_month = int(st.session_state.get(key_month, default_dt.month))
+        selected_day = int(st.session_state.get(key_day, default_dt.day))
+        selected_max_day = calendar.monthrange(selected_year, selected_month)[1]
+        if selected_day > selected_max_day:
+            selected_day = selected_max_day
+            st.session_state[key_day] = selected_day
+        selected_date = datetime(selected_year, selected_month, selected_day, tzinfo=HKT_TZ).date()
+        today = now_hkt.date()
+        if selected_date < today:
+            st.session_state[key_year] = today.year
+            st.session_state[key_month] = today.month
+            st.session_state[key_day] = today.day
+            selected_year, selected_month, selected_day = today.year, today.month, today.day
+            selected_date = today
+
+        all_slots = [(h, m) for h in range(24) for m in range(0, 60, window_minutes)]
+        slot_tuples = all_slots
+        if selected_date == today:
+            earliest_slot = round_up_to_window(now_hkt + timedelta(seconds=1), window_minutes)
+            slot_tuples = [
+                (h, m)
+                for h, m in all_slots
+                if datetime(selected_year, selected_month, selected_day, h, m, tzinfo=HKT_TZ) >= earliest_slot
+            ]
+        if not slot_tuples:
+            next_day = today + timedelta(days=1)
+            st.session_state[key_year] = next_day.year
+            st.session_state[key_month] = next_day.month
+            st.session_state[key_day] = next_day.day
+            selected_year, selected_month, selected_day = next_day.year, next_day.month, next_day.day
+            selected_date = next_day
+            slot_tuples = all_slots
+
+        hour_options = sorted({h for h, _ in slot_tuples})
+        if int(st.session_state.get(key_hour, default_dt.hour)) not in hour_options:
+            st.session_state[key_hour] = hour_options[0]
+        minute_options = [m for h, m in slot_tuples if h == int(st.session_state.get(key_hour, hour_options[0]))]
+        if int(st.session_state.get(key_min, default_dt.minute)) not in minute_options:
+            st.session_state[key_min] = minute_options[0]
+
+        hour_col, min_col, lock_col = st.columns([1, 1, 1])
         with hour_col:
-            st.selectbox("小时", options=list(range(24)), key=key_hour, format_func=lambda x: f"{int(x):02d}")
+            st.selectbox("小时", options=hour_options, key=key_hour, format_func=lambda x: f"{int(x):02d}")
         with min_col:
-            st.selectbox("分钟", options=list(range(0, 60, 5)), key=key_min, format_func=lambda x: f"{int(x):02d}")
+            st.selectbox(
+                "分钟",
+                options=[m for h, m in slot_tuples if h == int(st.session_state.get(key_hour, hour_options[0]))],
+                key=key_min,
+                format_func=lambda x: f"{int(x):02d}",
+            )
+        with lock_col:
+            st.checkbox("🔒 锁定", key=key_lock, help="锁定后该贴文不会被后续顺延影响。")
 
         st.caption("日期")
-        chosen_year = int(st.session_state.get(key_year, default_dt.year))
-        chosen_month = int(st.session_state.get(key_month, default_dt.month))
-        max_day = calendar.monthrange(chosen_year, chosen_month)[1]
-        chosen_day = int(st.session_state.get(key_day, default_dt.day))
-        if chosen_day > max_day:
-            chosen_day = max_day
-            st.session_state[key_day] = chosen_day
-
         year_col, month_col, day_col = st.columns(3)
         with year_col:
             st.selectbox(
@@ -175,7 +257,6 @@ def _render_schedule_dialog_if_needed(pending_lookup: dict[str, dict[str, Any]],
                 label_visibility="collapsed",
                 format_func=lambda x: f"{int(x):02d}",
             )
-
         selected_year = int(st.session_state.get(key_year, default_dt.year))
         selected_month = int(st.session_state.get(key_month, default_dt.month))
         selected_max_day = calendar.monthrange(selected_year, selected_month)[1]
@@ -208,8 +289,15 @@ def _render_schedule_dialog_if_needed(pending_lookup: dict[str, dict[str, Any]],
                     chosen_min,
                     tzinfo=HKT_TZ,
                 )
-                ok, msg = move_pending_item_to_scheduled(target_item_id, schedule_dt)
+                lock_after_schedule = bool(st.session_state.get(key_lock, False))
+                ok, msg, report = move_pending_item_to_scheduled(
+                    target_item_id,
+                    schedule_dt,
+                    window_minutes=window_minutes,
+                    lock_after_schedule=lock_after_schedule,
+                )
                 if ok:
+                    st.session_state["last_schedule_impact_report"] = report
                     st.session_state["board_flash"] = f"排程成功：{schedule_dt:%Y-%m-%d %H:%M}（HKT）"
                     st.session_state["schedule_dialog_open"] = False
                     st.session_state["schedule_pick_item_id"] = ""
@@ -226,10 +314,15 @@ def _render_schedule_dialog_if_needed(pending_lookup: dict[str, dict[str, Any]],
 
 def render_today_board() -> None:
     now_hkt = datetime.now(HKT_TZ)
+    st.session_state.setdefault("schedule_window_minutes", DEFAULT_SCHEDULE_WINDOW_MINUTES)
+    if int(st.session_state.get("schedule_window_minutes", DEFAULT_SCHEDULE_WINDOW_MINUTES)) not in SCHEDULE_WINDOW_OPTIONS:
+        st.session_state["schedule_window_minutes"] = DEFAULT_SCHEDULE_WINDOW_MINUTES
     st.markdown(
         """
         <style>
-        .st-key-schedule_pick_commit {
+        .st-key-schedule_pick_commit,
+        .st-key-schedule_lock_commit,
+        .st-key-unschedule_commit {
             display: none !important;
         }
         </style>
@@ -237,6 +330,8 @@ def render_today_board() -> None:
         unsafe_allow_html=True,
     )
     st.button("schedule_pick_commit", key="schedule_pick_commit")
+    st.button("schedule_lock_commit", key="schedule_lock_commit")
+    st.button("unschedule_commit", key="unschedule_commit")
     past_24h = now_hkt - timedelta(hours=24)
     next_24h = now_hkt + timedelta(hours=24)
 
@@ -252,6 +347,7 @@ def render_today_board() -> None:
         picked_item_id = str(picked_raw).strip()
     if picked_item_id:
         if picked_item_id in pending_lookup:
+            st.session_state["settings_open"] = False
             last_item_id = str(st.session_state.get("schedule_pick_item_id", "")).strip()
             if not st.session_state.get("schedule_dialog_open", False) or last_item_id != picked_item_id:
                 st.session_state["schedule_dialog_token"] = int(st.session_state.get("schedule_dialog_token", 0)) + 1
@@ -263,6 +359,46 @@ def render_today_board() -> None:
             del st.query_params["schedule_pick"]
         except Exception:
             pass
+
+    lock_raw = st.query_params.get("lock_toggle", "")
+    if isinstance(lock_raw, list):
+        lock_key = str(lock_raw[0] if lock_raw else "").strip()
+    else:
+        lock_key = str(lock_raw).strip()
+    if lock_key:
+        st.session_state["settings_open"] = False
+        ok, msg = toggle_scheduled_lock(lock_key)
+        if ok:
+            st.session_state["board_flash"] = msg
+            st.session_state["schedule_dialog_open"] = False
+            st.session_state["schedule_pick_item_id"] = ""
+        else:
+            st.warning(msg)
+        try:
+            del st.query_params["lock_toggle"]
+        except Exception:
+            pass
+        st.rerun()
+
+    unschedule_raw = st.query_params.get("unschedule_pick", "")
+    if isinstance(unschedule_raw, list):
+        unschedule_key = str(unschedule_raw[0] if unschedule_raw else "").strip()
+    else:
+        unschedule_key = str(unschedule_raw).strip()
+    if unschedule_key:
+        st.session_state["settings_open"] = False
+        ok, msg = move_scheduled_item_to_pending(unschedule_key)
+        if ok:
+            st.session_state["board_flash"] = msg
+            st.session_state["schedule_dialog_open"] = False
+            st.session_state["schedule_pick_item_id"] = ""
+        else:
+            st.warning(msg)
+        try:
+            del st.query_params["unschedule_pick"]
+        except Exception:
+            pass
+        st.rerun()
 
     available_categories = {
         str(item.get("category", "未分類"))
@@ -281,6 +417,31 @@ def render_today_board() -> None:
         key=filter_key,
         help="仅筛选前两列（已發佈 / 已排程）。",
     )
+    impact_report = st.session_state.get("last_schedule_impact_report") or {}
+    shifted_rows = impact_report.get("shifted_rows", []) if isinstance(impact_report, dict) else []
+    skipped_locked_rows = impact_report.get("skipped_locked_rows", []) if isinstance(impact_report, dict) else []
+    if shifted_rows or skipped_locked_rows:
+        locked_times = sorted(
+            {str(x.get("locked_time", "")).strip() for x in skipped_locked_rows if str(x.get("locked_time", "")).strip()}
+        )
+        locked_times_text = "、".join(locked_times) if locked_times else "无"
+        expander_title = (
+            f"排程影响：顺延 {len(shifted_rows)} 篇｜锁定跳过 {len(skipped_locked_rows)} 篇（锁定时间：{locked_times_text}）"
+        )
+        with st.expander(expander_title, expanded=False):
+            if shifted_rows:
+                st.markdown("**被顺延文章**")
+                for row in shifted_rows:
+                    st.write(
+                        f"- {row.get('title', 'N/A')}｜{row.get('old_time', 'N/A')} -> {row.get('new_time', 'N/A')}"
+                    )
+            if skipped_locked_rows:
+                st.markdown("**锁定跳过文章**")
+                for row in skipped_locked_rows:
+                    st.write(f"- {row.get('title', 'N/A')}｜锁定时间：{row.get('locked_time', 'N/A')}")
+            if not shifted_rows:
+                st.caption("本次排程没有触发顺延。")
+
     chip_color_payload = {
         key: category_style_tokens(key)["header_bg"] for key in CATEGORY_ORDER if key in all_categories
     }
@@ -300,7 +461,13 @@ def render_today_board() -> None:
         if past_24h <= dt <= now_hkt and (not active_categories or str(item.get("category", "未分類")) in active_categories)
     ]
     scheduled_cards = [
-        _card_html(item, dt)
+        _card_html(
+            item,
+            dt,
+            lock_schedule_key=build_scheduled_key(item),
+            unschedule_key=build_scheduled_key(item),
+            is_locked=bool(item.get("is_locked", False)),
+        )
         for dt, item in sorted(scheduled_items, key=lambda x: x[0])
         if now_hkt <= dt <= next_24h and (not active_categories or str(item.get("category", "未分類")) in active_categories)
     ]
@@ -669,8 +836,65 @@ def render_today_board() -> None:
         font-size: 13px;
         transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease;
     }
+    .post-card-lock-btn {
+        position: absolute;
+        top: 6px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 4;
+        width: 22px;
+        height: 22px;
+        border-radius: 999px;
+        border: 1px solid #d4d7f5;
+        background: #ffffff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        text-decoration: none;
+        box-shadow: 0 2px 6px rgba(62, 62, 132, 0.12);
+        line-height: 1;
+        font-size: 12px;
+        opacity: 0.55;
+        transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease, opacity .12s ease;
+    }
+    .post-card-return-btn {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        z-index: 4;
+        width: 22px;
+        height: 22px;
+        border-radius: 999px;
+        border: 1px solid #d4d7f5;
+        background: #ffffff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        text-decoration: none;
+        box-shadow: 0 2px 6px rgba(62, 62, 132, 0.12);
+        line-height: 1;
+        font-size: 12px;
+        opacity: 0.85;
+        transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease, opacity .12s ease;
+    }
+    .post-card-lock-btn.is-locked {
+        opacity: 1;
+        border-color: #8a8ade;
+        box-shadow: 0 4px 10px rgba(62, 62, 132, 0.2);
+    }
     .post-card-schedule-btn:hover {
         transform: translateX(-50%) translateY(-1px);
+        border-color: #8a8ade;
+        box-shadow: 0 4px 10px rgba(62, 62, 132, 0.2);
+    }
+    .post-card-lock-btn:hover {
+        transform: translateX(-50%) translateY(-1px);
+        opacity: 1;
+        border-color: #8a8ade;
+    }
+    .post-card-return-btn:hover {
+        transform: translateY(-1px);
+        opacity: 1;
         border-color: #8a8ade;
         box-shadow: 0 4px 10px rgba(62, 62, 132, 0.2);
     }
@@ -743,6 +967,19 @@ def render_today_board() -> None:
             height: 20px;
             top: 5px;
             font-size: 12px;
+        }
+        .post-card-lock-btn {
+            width: 20px;
+            height: 20px;
+            top: 5px;
+            font-size: 11px;
+        }
+        .post-card-return-btn {
+            width: 20px;
+            height: 20px;
+            top: 5px;
+            right: 5px;
+            font-size: 11px;
         }
         .post-thumb, .post-thumb-placeholder {
             height: 58px;
