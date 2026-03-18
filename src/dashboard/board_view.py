@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import calendar
 import json
 from datetime import datetime, timedelta
 from html import escape
@@ -10,13 +11,13 @@ import streamlit.components.v1 as components
 
 from src.dashboard.config import CATEGORY_CLASS_MAP, CATEGORY_ORDER, HKT_TZ
 from src.dashboard.data_utils import load_pending_base, load_published_items, load_scheduled_items
-from src.dashboard.frontend_templates import build_chip_color_script, build_drag_drop_script
+from src.dashboard.frontend_templates import build_chip_color_script, build_schedule_pick_script
 from src.dashboard.media_utils import parse_publish_time, resolve_thumbnail_src, round_up_to_5_minutes
 from src.dashboard.scheduling_utils import move_pending_item_to_scheduled
 from src.dashboard.style_utils import category_style_tokens
 
 
-def _card_html(item: dict[str, Any], dt_hkt: datetime, draggable: bool = False) -> str:
+def _card_html(item: dict[str, Any], dt_hkt: datetime, schedule_item_id: str = "") -> str:
     link = escape(str(item.get("Post URL", "#")))
     title = escape(str(item.get("title", "")))
     thumb = escape(resolve_thumbnail_src(str(item.get("thumbnail", ""))))
@@ -24,21 +25,26 @@ def _card_html(item: dict[str, Any], dt_hkt: datetime, draggable: bool = False) 
     category = str(item.get("category", ""))
     category_cls = CATEGORY_CLASS_MAP.get(category, "")
     card_cls = f" post-card-{category_cls}" if category_cls else ""
-    item_id = escape(str(item.get("item_id", "")))
-    drag_attrs = ""
-    if draggable and item_id:
-        card_cls += " post-card-draggable"
-        drag_attrs = f' draggable="true" data-item-id="{item_id}"'
+    schedule_action_html = ""
+    if schedule_item_id:
+        schedule_action_html = (
+            f'<button type="button" class="post-card-schedule-btn" data-item-id="{escape(schedule_item_id)}" '
+            f'title="加入排程" aria-label="加入排程">📅</button>'
+        )
+        card_cls += " post-card-has-schedule"
     if thumb:
         thumb_html = f'<img class="post-thumb" src="{thumb}" alt="thumbnail"/>'
     else:
         thumb_html = '<div class="post-thumb-placeholder"></div>'
     return (
-        f'<a class="post-card{card_cls}"{drag_attrs} href="{link}" target="_blank" rel="noopener noreferrer">'
+        f'<div class="post-card{card_cls}">'
+        f"{schedule_action_html}"
+        f'<a class="post-card-link" href="{link}" target="_blank" rel="noopener noreferrer">'
         f'<div class="post-time">{time_text}</div>'
         f"{thumb_html}"
         f'<div class="post-title">{title}</div>'
         "</a>"
+        "</div>"
     )
 
 
@@ -104,36 +110,100 @@ def _render_schedule_dialog_if_needed(pending_lookup: dict[str, dict[str, Any]],
         return
 
     default_dt = round_up_to_5_minutes(now_hkt + timedelta(minutes=5))
-    key_date = f"sched_date_{target_item_id}"
-    key_hour = f"sched_hour_{target_item_id}"
-    key_min = f"sched_min_{target_item_id}"
-    st.session_state.setdefault(key_date, default_dt.date())
+    dialog_token = int(st.session_state.get("schedule_dialog_token", 0))
+    key_year = f"sched_year_{target_item_id}_{dialog_token}"
+    key_month = f"sched_month_{target_item_id}_{dialog_token}"
+    key_day = f"sched_day_{target_item_id}_{dialog_token}"
+    key_hour = f"sched_hour_{target_item_id}_{dialog_token}"
+    key_min = f"sched_min_{target_item_id}_{dialog_token}"
+    st.session_state.setdefault(key_year, default_dt.year)
+    st.session_state.setdefault(key_month, default_dt.month)
+    st.session_state.setdefault(key_day, default_dt.day)
     st.session_state.setdefault(key_hour, default_dt.hour)
     st.session_state.setdefault(key_min, (default_dt.minute // 5) * 5)
 
     @st.dialog("设置排程时间")
     def _schedule_dialog() -> None:
-        st.caption("拖放完成后，请设置发布时间（5 分钟粒度）。")
+        st.caption("点击卡片顶部日历按钮后，请设置发布时间（5 分钟粒度）。")
         st.write(f"目标贴文：{item.get('title', 'N/A')}")
+        components.html(
+            """
+            <script>
+            (function () {
+              const blurActive = () => {
+                const el = window.parent.document.activeElement;
+                if (el && typeof el.blur === 'function') el.blur();
+              };
+              blurActive();
+              window.setTimeout(blurActive, 120);
+            })();
+            </script>
+            """,
+            height=0,
+            scrolling=False,
+        )
 
-        date_col, hour_col, min_col = st.columns([2.2, 1, 1])
-        with date_col:
-            st.date_input("日期", key=key_date)
+        hour_col, min_col = st.columns(2)
         with hour_col:
             st.selectbox("小时", options=list(range(24)), key=key_hour, format_func=lambda x: f"{int(x):02d}")
         with min_col:
             st.selectbox("分钟", options=list(range(0, 60, 5)), key=key_min, format_func=lambda x: f"{int(x):02d}")
 
+        st.caption("日期")
+        chosen_year = int(st.session_state.get(key_year, default_dt.year))
+        chosen_month = int(st.session_state.get(key_month, default_dt.month))
+        max_day = calendar.monthrange(chosen_year, chosen_month)[1]
+        chosen_day = int(st.session_state.get(key_day, default_dt.day))
+        if chosen_day > max_day:
+            chosen_day = max_day
+            st.session_state[key_day] = chosen_day
+
+        year_col, month_col, day_col = st.columns(3)
+        with year_col:
+            st.selectbox(
+                "年",
+                options=list(range(default_dt.year - 1, default_dt.year + 3)),
+                key=key_year,
+                label_visibility="collapsed",
+                format_func=lambda x: f"{int(x):04d}",
+            )
+        with month_col:
+            st.selectbox(
+                "月",
+                options=list(range(1, 13)),
+                key=key_month,
+                label_visibility="collapsed",
+                format_func=lambda x: f"{int(x):02d}",
+            )
+
+        selected_year = int(st.session_state.get(key_year, default_dt.year))
+        selected_month = int(st.session_state.get(key_month, default_dt.month))
+        selected_max_day = calendar.monthrange(selected_year, selected_month)[1]
+        current_day = int(st.session_state.get(key_day, default_dt.day))
+        if current_day > selected_max_day:
+            current_day = selected_max_day
+            st.session_state[key_day] = current_day
+        with day_col:
+            st.selectbox(
+                "日",
+                options=list(range(1, selected_max_day + 1)),
+                key=key_day,
+                label_visibility="collapsed",
+                format_func=lambda x: f"{int(x):02d}",
+            )
+
         action_col1, action_col2 = st.columns(2)
         with action_col1:
             if st.button("确认排程", use_container_width=True):
-                chosen_date = st.session_state.get(key_date, default_dt.date())
+                chosen_year = int(st.session_state.get(key_year, default_dt.year))
+                chosen_month = int(st.session_state.get(key_month, default_dt.month))
+                chosen_day = int(st.session_state.get(key_day, default_dt.day))
                 chosen_hour = int(st.session_state.get(key_hour, default_dt.hour))
                 chosen_min = int(st.session_state.get(key_min, default_dt.minute))
                 schedule_dt = datetime(
-                    chosen_date.year,
-                    chosen_date.month,
-                    chosen_date.day,
+                    chosen_year,
+                    chosen_month,
+                    chosen_day,
                     chosen_hour,
                     chosen_min,
                     tzinfo=HKT_TZ,
@@ -159,15 +229,14 @@ def render_today_board() -> None:
     st.markdown(
         """
         <style>
-        .st-key-drag_drop_commit {
+        .st-key-schedule_pick_commit {
             display: none !important;
         }
         </style>
         """,
         unsafe_allow_html=True,
     )
-    st.button("drag_drop_commit", key="drag_drop_commit")
-
+    st.button("schedule_pick_commit", key="schedule_pick_commit")
     past_24h = now_hkt - timedelta(hours=24)
     next_24h = now_hkt + timedelta(hours=24)
 
@@ -181,14 +250,15 @@ def render_today_board() -> None:
         picked_item_id = str(picked_raw[0] if picked_raw else "").strip()
     else:
         picked_item_id = str(picked_raw).strip()
-    if st.session_state.get("debug_drag_enabled", True):
-        st.caption(f"[debug] schedule_pick raw={picked_raw!r}, parsed={picked_item_id!r}")
     if picked_item_id:
         if picked_item_id in pending_lookup:
+            last_item_id = str(st.session_state.get("schedule_pick_item_id", "")).strip()
+            if not st.session_state.get("schedule_dialog_open", False) or last_item_id != picked_item_id:
+                st.session_state["schedule_dialog_token"] = int(st.session_state.get("schedule_dialog_token", 0)) + 1
             st.session_state["schedule_pick_item_id"] = picked_item_id
             st.session_state["schedule_dialog_open"] = True
         else:
-            st.warning("未找到拖放目标，可能已被处理。")
+            st.warning("未找到排程目标，可能已被处理。")
         try:
             del st.query_params["schedule_pick"]
         except Exception:
@@ -225,12 +295,12 @@ def render_today_board() -> None:
         st.success(flash_message)
 
     published_cards = [
-        _card_html(item, dt, draggable=False)
+        _card_html(item, dt)
         for dt, item in sorted(published_items, key=lambda x: x[0], reverse=True)
         if past_24h <= dt <= now_hkt and (not active_categories or str(item.get("category", "未分類")) in active_categories)
     ]
     scheduled_cards = [
-        _card_html(item, dt, draggable=False)
+        _card_html(item, dt)
         for dt, item in sorted(scheduled_items, key=lambda x: x[0])
         if now_hkt <= dt <= next_24h and (not active_categories or str(item.get("category", "未分類")) in active_categories)
     ]
@@ -560,26 +630,49 @@ def render_today_board() -> None:
     }
     .post-card {
         display: block;
+        position: relative;
         width: 100%;
         max-width: 100%;
         border: 1px solid #dcdcf6;
         border-radius: 8px;
-        overflow: hidden;
-        text-decoration: none;
-        color: inherit;
+        overflow: visible;
         background: #fff;
         transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease, opacity .15s ease;
-        cursor: pointer;
     }
-    .post-card-draggable {
-        cursor: grab;
+    .post-card-link {
+        display: block;
+        text-decoration: none;
+        color: inherit;
+        border-radius: 8px;
+        overflow: hidden;
     }
-    .post-card-draggable:active {
-        cursor: grabbing;
+    .post-card-has-schedule .post-card-link {
+        padding-top: 0;
     }
-    .dropzone-active {
-        outline: 2px dashed #6e6edd;
-        outline-offset: 3px;
+    .post-card-schedule-btn {
+        position: absolute;
+        top: 6px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 4;
+        width: 22px;
+        height: 22px;
+        border-radius: 999px;
+        border: 1px solid #d4d7f5;
+        background: #ffffff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        text-decoration: none;
+        box-shadow: 0 2px 6px rgba(62, 62, 132, 0.12);
+        line-height: 1;
+        font-size: 13px;
+        transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease;
+    }
+    .post-card-schedule-btn:hover {
+        transform: translateX(-50%) translateY(-1px);
+        border-color: #8a8ade;
+        box-shadow: 0 4px 10px rgba(62, 62, 132, 0.2);
     }
     .post-card:hover {
         border-color: #6e6edd;
@@ -644,6 +737,12 @@ def render_today_board() -> None:
         .post-time {
             font-size: 11px;
             padding: 5px 6px 0 6px;
+        }
+        .post-card-schedule-btn {
+            width: 20px;
+            height: 20px;
+            top: 5px;
+            font-size: 12px;
         }
         .post-thumb, .post-thumb-placeholder {
             height: 58px;
@@ -734,12 +833,15 @@ def render_today_board() -> None:
     board_html += _build_column_html("已發佈", published_cards, sticky_slot=1, toggle_id="toggle-col1", toggle_icon="📰")
     board_html += _build_column_html("已排程", scheduled_cards, sticky_slot=2, toggle_id="toggle-col2", toggle_icon="📅")
     for category in ["社會事", "大視野", "兩岸", "法庭事", "消費", "娛樂", "心韓"]:
-        category_cards = [_card_html(item, dt, draggable=True) for dt, item in pending_by_category.get(category, [])]
+        category_cards = [
+            _card_html(item, dt, schedule_item_id=str(item.get("item_id", "")).strip())
+            for dt, item in pending_by_category.get(category, [])
+        ]
         board_html += _build_column_html(category, category_cards, subtitle="已出未排", category_key=category)
     board_html += "</div></div></div></div>"
     st.markdown(board_html, unsafe_allow_html=True)
     components.html(
-        build_drag_drop_script(),
+        build_schedule_pick_script(),
         height=0,
         scrolling=False,
     )
