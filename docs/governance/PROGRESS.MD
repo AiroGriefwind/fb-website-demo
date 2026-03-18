@@ -970,3 +970,21 @@
 
 下一步:
 - 由你在线上确认“已排程去彩色（仅娛樂保留）”观感；如需可再调娛樂底色浓度。
+
+日期时间(HKT): 2026-03-18 18:44
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@<待填新commit>
+完成内容:
+- [本仓库] 按用户反馈彻底移除九列看板中的“拖拽排程”链路：删除 draggable 卡片、drop zone 高亮、隐藏提交按钮、前端拖拽脚本与相关 debug 提示。
+- [本仓库] 将排程触发改为“点击第3~9列（已出未排）卡片顶部 12 点位 `📅` 图标按钮”，点击后通过 `schedule_pick` 打开原有排程时间弹窗。
+- [本仓库] 同步更新 `docs/governance/TECHSTACK.MD` 的 Streamlit 当前实现描述，移除拖拽叙述并改为 icon 触发排程说明。
+
+验证结果:
+- `python -m py_compile` 覆盖 `src/dashboard/` 相关模块通过。
+- `read_lints` 检查 `src/dashboard/board_view.py`、`src/dashboard/frontend_templates.py` 无新增问题。
+
+风险/阻塞:
+- 卡片顶部 `📅` 按钮与卡片本体链接并存，移动端需继续实测误触率与可点面积是否满足编辑同事习惯。
+
+下一步:
+- 由你在 demo 部署环境验证“第3~9列点击 `📅` 即拉起排程弹窗”主链路；若需要可再放大按钮尺寸或扩展到整卡点击排程。
