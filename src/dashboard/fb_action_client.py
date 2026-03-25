@@ -183,7 +183,21 @@ class FBActionClient:
         return False, msg, {"status_code": status, "response_json": resp_json}
 
     def _auth_headers(self) -> dict[str, str]:
-        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {self._token}"}
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        if self.basic_user or self.basic_pass:
+            headers["Authorization"] = _build_basic_auth(self.basic_user, self.basic_pass)
+            headers["Token"] = self._token
+        else:
+            headers["Authorization"] = f"Bearer {self._token}"
+        if self._cookie:
+            headers["Cookie"] = self._cookie
+        return headers
+
+    def _bearer_headers(self) -> dict[str, str]:
+        headers: dict[str, str] = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self._token}",
+        }
         if self._cookie:
             headers["Cookie"] = self._cookie
         return headers
@@ -203,10 +217,16 @@ class FBActionClient:
         headers = self._auth_headers()
         ok, status, _, resp_json, err = _json_post(self.base_url, body, headers)
         if (not ok) and status in (401, 403):
+            # Gateway mode and bearer mode can differ by environment;
+            # try login refresh first, then fallback auth header mode.
             ok_login, _, _ = self._login()
             if ok_login:
                 headers = self._auth_headers()
                 ok, status, _, resp_json, err = _json_post(self.base_url, body, headers)
+            if (not ok) and status == 401 and (self.basic_user or self.basic_pass):
+                fallback_headers = self._bearer_headers()
+                ok, status, _, resp_json, err = _json_post(self.base_url, body, fallback_headers)
+                headers = fallback_headers
 
         msg = _extract_message(resp_json, err or ("ok" if ok else f"{action} failed ({status})"))
         self._write_action_log(action, body, status, headers, resp_json, msg if not ok else "")
