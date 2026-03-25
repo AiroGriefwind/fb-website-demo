@@ -88,29 +88,6 @@ def _safe_json_decode(raw_text: str) -> Any:
         return {"raw_text": raw_text}
 
 
-def _build_gateway_basic_auth(username: str, password: str) -> str:
-    raw = f"{username}:{password}".encode("utf-8")
-    return f"Basic {base64.b64encode(raw).decode('ascii')}"
-
-
-def _build_action_headers(
-    *,
-    token: str,
-    session_cookie: str,
-    gateway_basic_auth: str,
-    use_gateway_mode: bool,
-) -> dict[str, str]:
-    headers: dict[str, str] = {"Content-Type": "application/json"}
-    if use_gateway_mode and gateway_basic_auth:
-        headers["Authorization"] = gateway_basic_auth
-        headers["Token"] = token
-    else:
-        headers["Authorization"] = f"Bearer {token}"
-    if session_cookie:
-        headers["Cookie"] = session_cookie
-    return headers
-
-
 def _json_post(url: str, payload: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
     body_json = {k: v for k, v in payload.items() if v is not None}
     body_raw = json.dumps(body_json, ensure_ascii=False)
@@ -451,7 +428,10 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
         api_url = _normalize_endpoint_url(api_url)
         basic_user = basic_user or url_user
         basic_pass = basic_pass or url_pass
-        gateway_basic_auth = _build_gateway_basic_auth(basic_user, basic_pass) if (basic_user or basic_pass) else ""
+        gateway_basic_auth = ""
+        if basic_user or basic_pass:
+            raw = f"{basic_user}:{basic_pass}".encode("utf-8")
+            gateway_basic_auth = f"Basic {base64.b64encode(raw).decode('ascii')}"
 
         login_headers = {"Content-Type": "application/json"}
         if gateway_basic_auth:
@@ -473,42 +453,23 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
 
         login_resp_headers = login_result.get("response_headers", {})
         session_cookie = str(login_resp_headers.get("Set-Cookie", "")).split(";", 1)[0].strip()
-        primary_mode = "gateway_basic_token" if gateway_basic_auth else "bearer"
+        common_headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}",
+        }
+        if session_cookie:
+            common_headers["Cookie"] = session_cookie
 
-        def _call_action(payload: dict[str, Any]) -> dict[str, Any]:
-            primary_headers = _build_action_headers(
-                token=token,
-                session_cookie=session_cookie,
-                gateway_basic_auth=gateway_basic_auth,
-                use_gateway_mode=bool(gateway_basic_auth),
-            )
-            primary_result = _json_post(api_url, payload, primary_headers)
-            primary_result["auth_mode"] = primary_mode
-            if primary_result.get("ok"):
-                return primary_result
-            if int(primary_result.get("status_code", 0)) != 401:
-                return primary_result
-            if not gateway_basic_auth:
-                return primary_result
-            fallback_headers = _build_action_headers(
-                token=token,
-                session_cookie=session_cookie,
-                gateway_basic_auth=gateway_basic_auth,
-                use_gateway_mode=False,
-            )
-            fallback_result = _json_post(api_url, payload, fallback_headers)
-            fallback_result["auth_mode"] = "bearer_fallback"
-            fallback_result["primary_attempt"] = primary_result
-            return fallback_result
-
-        published_result = _call_action({"action": "fb_published"})
+        published_result = _json_post(api_url, {"action": "fb_published"}, common_headers)
+        published_result["auth_mode"] = "bearer"
         if not published_result.get("ok"):
             return {
                 "ok": False,
                 "message": f"fb_published failed ({int(published_result.get('status_code', 0))})",
                 "debug": {"login": login_result, "fb_published": published_result},
             }
-        scheduled_result = _call_action({"action": "fb_scheduled"})
+        scheduled_result = _json_post(api_url, {"action": "fb_scheduled"}, common_headers)
+        scheduled_result["auth_mode"] = "bearer"
         if not scheduled_result.get("ok"):
             return {
                 "ok": False,
@@ -522,7 +483,12 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
         seen_pending: set[str] = set()
         posts_items_all: list[dict[str, Any]] = []
         for cat in CATEGORY_ORDER:
-            posts_result = _call_action({"action": "posts", "category": cat, "search": "", "limit": posts_limit})
+            posts_result = _json_post(
+                api_url,
+                {"action": "posts", "category": cat, "search": "", "limit": posts_limit},
+                common_headers,
+            )
+            posts_result["auth_mode"] = "bearer"
             if not posts_result.get("ok"):
                 return {
                     "ok": False,
