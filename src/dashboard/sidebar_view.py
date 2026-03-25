@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import os
 import json
+import hashlib
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import streamlit as st
@@ -16,6 +18,7 @@ from src.dashboard.config import (
     SCHEDULE_WINDOW_OPTIONS,
     TOKEN_ENV,
     TRENDS_WEB_URL,
+    WORKSPACE_ROOT,
 )
 from src.dashboard.data_utils import (
     load_trending_keywords,
@@ -25,6 +28,114 @@ from src.dashboard.data_utils import (
     traffic_to_int,
 )
 
+SETTINGS_STATE_FILE = WORKSPACE_ROOT / "data" / "samples" / "dashboard_settings_state.json"
+
+
+def _settings_session_key() -> str:
+    token = str(st.session_state.get("fb_action_token", "")).strip()
+    if not token:
+        return "default"
+    return hashlib.sha1(token.encode("utf-8")).hexdigest()[:16]
+
+
+def _load_settings_state_file() -> dict[str, Any]:
+    if not SETTINGS_STATE_FILE.exists():
+        return {}
+    try:
+        raw = json.loads(SETTINGS_STATE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _save_settings_state() -> None:
+    key = _settings_session_key()
+    raw = _load_settings_state_file()
+    sessions = raw.get("sessions", {}) if isinstance(raw.get("sessions", {}), dict) else {}
+    sessions[key] = {
+        "cfg_schedule_window_minutes": int(st.session_state.get("cfg_schedule_window_minutes", DEFAULT_SCHEDULE_WINDOW_MINUTES)),
+        "schedule_window_minutes": int(st.session_state.get("schedule_window_minutes", DEFAULT_SCHEDULE_WINDOW_MINUTES)),
+        "cfg_enable_category_alias_mode": bool(st.session_state.get("cfg_enable_category_alias_mode", False)),
+        "cfg_enable_board_fallback_mode": bool(st.session_state.get("cfg_enable_board_fallback_mode", False)),
+        "cfg_target_fan_page_id": str(st.session_state.get("cfg_target_fan_page_id", "350584865140118")).strip()
+        or "350584865140118",
+        "updated_at": datetime.now(HKT_TZ).isoformat(),
+    }
+    payload = {"sessions": sessions}
+    SETTINGS_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    SETTINGS_STATE_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _apply_persisted_settings() -> None:
+    raw = _load_settings_state_file()
+    sessions = raw.get("sessions", {}) if isinstance(raw.get("sessions", {}), dict) else {}
+    key = _settings_session_key()
+    current = sessions.get(key) if isinstance(sessions.get(key), dict) else sessions.get("default", {})
+    if not isinstance(current, dict):
+        return
+    st.session_state["cfg_schedule_window_minutes"] = int(
+        current.get("cfg_schedule_window_minutes", st.session_state.get("cfg_schedule_window_minutes", DEFAULT_SCHEDULE_WINDOW_MINUTES))
+    )
+    st.session_state["schedule_window_minutes"] = int(
+        current.get("schedule_window_minutes", st.session_state.get("schedule_window_minutes", DEFAULT_SCHEDULE_WINDOW_MINUTES))
+    )
+    st.session_state["cfg_enable_category_alias_mode"] = bool(
+        current.get("cfg_enable_category_alias_mode", st.session_state.get("cfg_enable_category_alias_mode", False))
+    )
+    st.session_state["cfg_enable_board_fallback_mode"] = bool(
+        current.get("cfg_enable_board_fallback_mode", st.session_state.get("cfg_enable_board_fallback_mode", False))
+    )
+    st.session_state["cfg_target_fan_page_id"] = str(
+        current.get("cfg_target_fan_page_id", st.session_state.get("cfg_target_fan_page_id", "350584865140118"))
+    ).strip() or "350584865140118"
+
+
+def _copy_settings_to_draft() -> None:
+    st.session_state["draft_cfg_schedule_window_minutes"] = int(
+        st.session_state.get("cfg_schedule_window_minutes", DEFAULT_SCHEDULE_WINDOW_MINUTES)
+    )
+    st.session_state["draft_cfg_enable_category_alias_mode"] = bool(
+        st.session_state.get("cfg_enable_category_alias_mode", False)
+    )
+    st.session_state["draft_cfg_enable_board_fallback_mode"] = bool(
+        st.session_state.get("cfg_enable_board_fallback_mode", False)
+    )
+    st.session_state["draft_cfg_target_fan_page_id"] = str(
+        st.session_state.get("cfg_target_fan_page_id", "350584865140118")
+    ).strip() or "350584865140118"
+    st.session_state["settings_return_warn"] = False
+
+
+def _is_settings_dirty() -> bool:
+    return any(
+        [
+            int(st.session_state.get("draft_cfg_schedule_window_minutes", DEFAULT_SCHEDULE_WINDOW_MINUTES))
+            != int(st.session_state.get("cfg_schedule_window_minutes", DEFAULT_SCHEDULE_WINDOW_MINUTES)),
+            bool(st.session_state.get("draft_cfg_enable_category_alias_mode", False))
+            != bool(st.session_state.get("cfg_enable_category_alias_mode", False)),
+            bool(st.session_state.get("draft_cfg_enable_board_fallback_mode", False))
+            != bool(st.session_state.get("cfg_enable_board_fallback_mode", False)),
+            (str(st.session_state.get("draft_cfg_target_fan_page_id", "350584865140118")).strip() or "350584865140118")
+            != (str(st.session_state.get("cfg_target_fan_page_id", "350584865140118")).strip() or "350584865140118"),
+        ]
+    )
+
+
+def _apply_draft_settings() -> None:
+    chosen = int(st.session_state.get("draft_cfg_schedule_window_minutes", DEFAULT_SCHEDULE_WINDOW_MINUTES))
+    st.session_state["cfg_schedule_window_minutes"] = chosen
+    st.session_state["schedule_window_minutes"] = chosen
+    st.session_state["cfg_enable_category_alias_mode"] = bool(
+        st.session_state.get("draft_cfg_enable_category_alias_mode", False)
+    )
+    st.session_state["cfg_enable_board_fallback_mode"] = bool(
+        st.session_state.get("draft_cfg_enable_board_fallback_mode", False)
+    )
+    st.session_state["cfg_target_fan_page_id"] = (
+        str(st.session_state.get("draft_cfg_target_fan_page_id", "350584865140118")).strip() or "350584865140118"
+    )
+    _save_settings_state()
+
 
 def init_settings_state() -> None:
     st.session_state.setdefault("cfg_token", os.getenv(TOKEN_ENV, ""))
@@ -32,6 +143,21 @@ def init_settings_state() -> None:
     st.session_state.setdefault("settings_open", False)
     st.session_state.setdefault("schedule_window_minutes", DEFAULT_SCHEDULE_WINDOW_MINUTES)
     st.session_state.setdefault("cfg_schedule_window_minutes", st.session_state.get("schedule_window_minutes"))
+    st.session_state.setdefault("cfg_enable_category_alias_mode", False)
+    st.session_state.setdefault("cfg_enable_board_fallback_mode", False)
+    st.session_state.setdefault("cfg_target_fan_page_id", "350584865140118")
+    if not bool(st.session_state.get("_dashboard_settings_loaded", False)):
+        _apply_persisted_settings()
+        st.session_state["_dashboard_settings_loaded"] = True
+    st.session_state.setdefault("draft_cfg_schedule_window_minutes", st.session_state.get("cfg_schedule_window_minutes"))
+    st.session_state.setdefault(
+        "draft_cfg_enable_category_alias_mode", st.session_state.get("cfg_enable_category_alias_mode", False)
+    )
+    st.session_state.setdefault(
+        "draft_cfg_enable_board_fallback_mode", st.session_state.get("cfg_enable_board_fallback_mode", False)
+    )
+    st.session_state.setdefault("draft_cfg_target_fan_page_id", st.session_state.get("cfg_target_fan_page_id"))
+    st.session_state.setdefault("settings_return_warn", False)
 
 
 def _render_settings_content() -> None:
@@ -69,15 +195,47 @@ def _render_settings_content() -> None:
     st.selectbox(
         "排程窗口（分钟）",
         options=SCHEDULE_WINDOW_OPTIONS,
-        key="cfg_schedule_window_minutes",
+        key="draft_cfg_schedule_window_minutes",
         help="仅确认后生效。生效后会刷新看板分钟粒度。",
     )
-    if st.button("确认排程窗口", use_container_width=True):
-        chosen = int(st.session_state.get("cfg_schedule_window_minutes", DEFAULT_SCHEDULE_WINDOW_MINUTES))
-        st.session_state["schedule_window_minutes"] = chosen
-        st.session_state["settings_open"] = False
-        st.session_state["board_flash"] = f"排程窗口已更新为 {chosen} 分钟。"
-        st.rerun()
+
+    st.divider()
+    st.caption("测试模式（对接测试网站时使用）")
+    st.checkbox(
+        "启用分类归一化（如：娛圈事 -> 娛樂）",
+        key="draft_cfg_enable_category_alias_mode",
+        help="仅影响 API 同步写入到样本 JSON 的分类字段映射。",
+    )
+    st.checkbox(
+        "启用看板渲染兜底（无24小时数据时显示全量）",
+        key="draft_cfg_enable_board_fallback_mode",
+        help="仅影响看板显示，不改变 API 请求。",
+    )
+    st.text_input(
+        "测试 Fan Page ID（用于已排程过滤）",
+        key="draft_cfg_target_fan_page_id",
+        help="默认 350584865140118。若 CMS post fan_pages 中出现该 ID 且带 FB 链接，将从已出未排过滤。",
+    )
+
+    if bool(st.session_state.get("settings_return_warn", False)):
+        st.warning("你有未保存修改。再次点击“返回”将放弃本次修改。")
+
+    col_confirm, col_back = st.columns(2)
+    with col_confirm:
+        if st.button("确认", use_container_width=True):
+            _apply_draft_settings()
+            st.session_state["settings_open"] = False
+            st.session_state["settings_return_warn"] = False
+            st.session_state["board_flash"] = "设置已保存。"
+            st.rerun()
+    with col_back:
+        if st.button("返回", use_container_width=True):
+            if _is_settings_dirty() and not bool(st.session_state.get("settings_return_warn", False)):
+                st.session_state["settings_return_warn"] = True
+                st.rerun()
+            _copy_settings_to_draft()
+            st.session_state["settings_open"] = False
+            st.rerun()
 
 
 def _render_trends_widget(trends: list[dict[str, Any]], sort_mode: str) -> None:
@@ -377,9 +535,7 @@ def render_sidebar() -> None:
 
         st.divider()
         if st.button("設置", use_container_width=True):
-            st.session_state["cfg_schedule_window_minutes"] = int(
-                st.session_state.get("schedule_window_minutes", DEFAULT_SCHEDULE_WINDOW_MINUTES)
-            )
+            _copy_settings_to_draft()
             st.session_state["schedule_dialog_open"] = False
             st.session_state["schedule_pick_item_id"] = ""
             st.session_state["settings_open"] = True
@@ -392,15 +548,16 @@ def render_sidebar() -> None:
 def render_settings_dialog_if_needed() -> None:
     if not hasattr(st, "dialog"):
         return
-    if st.session_state.get("schedule_dialog_open", False):
+    if (
+        st.session_state.get("schedule_dialog_open", False)
+        or st.session_state.get("update_dialog_open", False)
+        or st.session_state.get("delete_dialog_open", False)
+    ):
         return
 
     @st.dialog("設置")
     def _settings_dialog() -> None:
         _render_settings_content()
-        if st.button("關閉", use_container_width=True):
-            st.session_state["settings_open"] = False
-            st.rerun()
 
     if st.session_state.get("settings_open", False):
         _settings_dialog()
