@@ -205,12 +205,6 @@ class FBActionClient:
         body = {"action": action, **payload}
         headers = self._auth_headers()
         ok, status, _, resp_json, err = _json_post(self.base_url, body, headers)
-        if (not ok) and status in (401, 403):
-            # Login uses gateway basic auth, but business actions stay bearer.
-            ok_login, _, _ = self._login()
-            if ok_login:
-                headers = self._auth_headers()
-                ok, status, _, resp_json, err = _json_post(self.base_url, body, headers)
 
         msg = _extract_message(resp_json, err or ("ok" if ok else f"{action} failed ({status})"))
         self._write_action_log(action, body, status, headers, resp_json, msg if not ok else "")
