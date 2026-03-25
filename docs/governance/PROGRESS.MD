@@ -1095,3 +1095,50 @@
 
 下一步:
 - 推送到 demo 仓库并让线上刷新确认锁图标可见。
+
+日期时间(HKT): 2026-03-25 15:00
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库）
+完成内容:
+- [本仓库] 完成 `src/dashboard/api_smoke_test_app.py` 冒烟测试页：覆盖并逐一跑通 `login/posts/fb_published/fb_scheduled/fb_publish/fb_update/fb_delete`，支持展示“请求体 + 完整HTTP请求 + 响应JSON”。
+- [本仓库] 完成鉴权链路排障并沉淀结论：登录阶段使用网关 Basic 通过入口；后续业务接口使用 Bearer token（并根据接口行为保留必要 cookie）；已通过独立 `http.client` 脚本与 Streamlit 冒烟页双路径验证。
+- [本仓库] 将前置读接口接入 demo 主页面数据流：页面加载自动登录并拉取 `fb_published/fb_scheduled/posts(各分类)`，写回 `data/samples/dashboard_published.json`、`dashboard_scheduled.json`、`dashboard_pending.json`，替代原假数据来源参与看板渲染。
+- [本仓库] 增加对接测试开关（设于側栏設置）：`分类归一化测试模式` 与 `渲染兜底测试模式`，默认关闭，便于测试站调试与正式版隔离。
+- [本仓库] 修复若干接入阶段 UI 问题：卡片/列宽统一约束、图片固定尺寸与坏链回退 `Dummy1`、看板主渲染切换 `components.html` 以规避 HTML 原文泄露。
+
+验证结果:
+- `python -m py_compile` 覆盖 `src/dashboard/` 相关模块通过。
+- `read_lints` 检查 `src/dashboard/app.py`、`live_api_sync.py`、`board_view.py`、`sidebar_view.py`、`api_smoke_test_app.py` 无新增问题。
+- 冒烟验证结论：`Get Published`、`Get Scheduled`、`Get Category Posts` 均可返回真实数据；`Publish/Update/Delete` 在冒烟页可发起并返回 API 结果。
+
+风险/阻塞:
+- 业务环境对 `Authorization` 与网关策略存在历史差异（Basic/Bearer 分工需以当前环境实测为准）；后续接入写操作时仍需保留超时、重复点击与失败重试的保护。
+- 真数据图片源存在失效/防盗链场景，已做占位兜底，但仍建议后续接入后端缩略图代理以提升稳定性。
+
+下一步:
+- 进入 FB 写操作 API 集成阶段：将 `fb_publish` 绑定“已出未排 -> 排程”动作，将 `fb_update`（✏️）接入已发布/已排程卡片，将 `fb_delete`（🗑️ / 已排程🔙确认）接入对应弹窗流程，并补充操作日志、loading 态、防重复提交与错误提示。
+
+日期时间(HKT): 2026-03-25 23:20
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库）
+完成内容:
+- [本仓库] 完成 FB 写操作主链路接入：`已出未排` 排程确认调用 `fb_publish`；`已排程/已发布` 新增 `✏️` 调用 `fb_update`；`已发布🗑️` 与 `已排程🔙` 确认后调用 `fb_delete`。
+- [本仓库] 新增 `src/dashboard/fb_action_client.py`：统一封装 login/token/cookie 与 `fb_publish/fb_update/fb_delete` 请求，输出统一结果结构并记录日志到 `logs/dashboard_fb_actions.jsonl`（敏感头已脱敏）。
+- [本仓库] 数据映射增强（`live_api_sync.py`）：补齐 `post_id/post_link_id/post_link_type/post_message/image_url/post_mp4_url`；支持 fanpage 过滤规则（目标 fanpage 已出现 link+post_link_id 时从“已出未排”隐藏）；补齐排程图缺图回填。
+- [本仓库] 交互与可靠性修复：已排程修改时间改为“小时/分钟/日期下拉 + 粒度联动 + 禁过去 + 锁窗口校验”；慢请求统一改为“关闭弹窗后在主页提示区显示 loading/结果”；修复 Streamlit 多 dialog 冲突。
+- [本仓库] 设置持久化升级：新增 `data/samples/dashboard_settings_state.json`，支持按 token-hash 会话键保存测试设置；设置弹窗改为“确认/返回”，返回支持未保存修改提示与放弃确认。
+- [本仓库] 修复删除命中关键字段：`fb_delete/fb_update` 的 `post_id` 改为 CMS 文章 `ID` 语义；通过 posts 数据构建 `post_link_id/post_link -> CMS ID` 映射回填，避免误用 FB page id 导致删除未生效。
+- [本仓库] 优化弹窗前等待：仅打开操作弹窗时跳过一次页面级 API 同步，避免点击 `📅` 后无必要等待。
+
+验证结果:
+- `python -m py_compile` 覆盖 `src/dashboard/app.py`、`board_view.py`、`live_api_sync.py`、`sidebar_view.py`、`fb_action_client.py` 通过。
+- `read_lints` 检查上述改动文件无新增问题。
+- 本地回归链路覆盖：排程弹窗打开、修改弹窗时间控件、删除确认流程、设置确认/返回与未保存提示、主页级 loading 与结果提示。
+
+风险/阻塞:
+- 线上环境若 Basic/Bearer 网关策略与测试站不一致，写接口仍可能出现鉴权差异；需以上线实测结果为准并据此固定 headers 策略。
+- `posts -> fb_scheduled/fb_published` 的 CMS ID 回填依赖 `post_link_id`/`post_link` 一致性；若后端字段规则变动，需同步更新映射策略。
+
+下一步:
+- 先在线上部署并验证真实 API（publish/update/delete + 错误提示 + 日志记录）全链路。
+- 线上验证通过后，再进行本地 UI 细节收口（按钮密度、文案、微交互和移动端观感）。

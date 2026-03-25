@@ -42,11 +42,13 @@ def build_schedule_pick_script() -> str:
 
       const tryBind = () => {
         attempts += 1;
-        const doc = window.parent.document;
-        const board = doc.querySelector('.board-root');
-        const commitBtn = doc.querySelector('.st-key-schedule_pick_commit button');
-        const lockCommitBtn = doc.querySelector('.st-key-schedule_lock_commit button');
-        const unscheduleCommitBtn = doc.querySelector('.st-key-unschedule_commit button');
+        const parentDoc = window.parent && window.parent.document ? window.parent.document : document;
+        const board = document.querySelector('.board-root') || parentDoc.querySelector('.board-root');
+        const commitBtn = parentDoc.querySelector('.st-key-schedule_pick_commit button');
+        const lockCommitBtn = parentDoc.querySelector('.st-key-schedule_lock_commit button');
+        const unscheduleCommitBtn = parentDoc.querySelector('.st-key-unschedule_commit button');
+        const updateCommitBtn = parentDoc.querySelector('.st-key-update_pick_commit button');
+        const deleteCommitBtn = parentDoc.querySelector('.st-key-delete_pick_commit button');
         if (!board || !commitBtn) {
           if (attempts < MAX_ATTEMPTS) {
             window.setTimeout(tryBind, 120);
@@ -55,6 +57,12 @@ def build_schedule_pick_script() -> str:
         }
 
         const bindAll = () => {
+          const triggerCommit = (btn, commitAction) => {
+            btn.classList.add('is-loading');
+            btn.setAttribute('disabled', 'disabled');
+            window.setTimeout(() => commitAction(), 90);
+          };
+
           const scheduleButtons = board.querySelectorAll('.post-card-schedule-btn[data-item-id]');
           scheduleButtons.forEach((btn) => {
             if (btn.dataset.bound === '1') return;
@@ -72,9 +80,7 @@ def build_schedule_pick_script() -> str:
               url.searchParams.set('schedule_pick', itemId);
               pwin.history.replaceState({}, '', url.toString());
               btn.blur();
-              // Delay rerun slightly so current click sequence fully ends,
-              // avoiding accidental click-through to the dialog date input.
-              window.setTimeout(() => commitBtn.click(), 90);
+              triggerCommit(btn, () => commitBtn.click());
             });
           });
 
@@ -95,9 +101,9 @@ def build_schedule_pick_script() -> str:
               url.searchParams.set('lock_toggle', scheduleKey);
               pwin.history.replaceState({}, '', url.toString());
               btn.blur();
-              window.setTimeout(() => {
+              triggerCommit(btn, () => {
                 if (lockCommitBtn) lockCommitBtn.click();
-              }, 90);
+              });
             });
           });
 
@@ -118,9 +124,55 @@ def build_schedule_pick_script() -> str:
               url.searchParams.set('unschedule_pick', unscheduleKey);
               pwin.history.replaceState({}, '', url.toString());
               btn.blur();
-              window.setTimeout(() => {
+              triggerCommit(btn, () => {
                 if (unscheduleCommitBtn) unscheduleCommitBtn.click();
-              }, 90);
+              });
+            });
+          });
+
+          const editButtons = board.querySelectorAll('.post-card-edit-btn[data-edit-key]');
+          editButtons.forEach((btn) => {
+            if (btn.dataset.bound === '1') return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', (ev) => {
+              ev.preventDefault();
+              ev.stopPropagation();
+              if (typeof ev.stopImmediatePropagation === 'function') {
+                ev.stopImmediatePropagation();
+              }
+              const editKey = String(btn.dataset.editKey || '').trim();
+              if (!editKey) return;
+              const pwin = window.parent;
+              const url = new URL(pwin.location.href);
+              url.searchParams.set('update_pick', editKey);
+              pwin.history.replaceState({}, '', url.toString());
+              btn.blur();
+              triggerCommit(btn, () => {
+                if (updateCommitBtn) updateCommitBtn.click();
+              });
+            });
+          });
+
+          const deleteButtons = board.querySelectorAll('.post-card-delete-btn[data-delete-key]');
+          deleteButtons.forEach((btn) => {
+            if (btn.dataset.bound === '1') return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', (ev) => {
+              ev.preventDefault();
+              ev.stopPropagation();
+              if (typeof ev.stopImmediatePropagation === 'function') {
+                ev.stopImmediatePropagation();
+              }
+              const deleteKey = String(btn.dataset.deleteKey || '').trim();
+              if (!deleteKey) return;
+              const pwin = window.parent;
+              const url = new URL(pwin.location.href);
+              url.searchParams.set('delete_pick', `published:${deleteKey}`);
+              pwin.history.replaceState({}, '', url.toString());
+              btn.blur();
+              triggerCommit(btn, () => {
+                if (deleteCommitBtn) deleteCommitBtn.click();
+              });
             });
           });
         };
