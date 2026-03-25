@@ -429,7 +429,7 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
         basic_user = basic_user or url_user
         basic_pass = basic_pass or url_pass
 
-        login_headers = {"Content-Type": "application/json; charset=utf-8"}
+        login_headers = {"Content-Type": "application/json"}
         if basic_user or basic_pass:
             raw = f"{basic_user}:{basic_pass}".encode("utf-8")
             login_headers["Authorization"] = f"Basic {base64.b64encode(raw).decode('ascii')}"
@@ -451,7 +451,7 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
         login_resp_headers = login_result.get("response_headers", {})
         session_cookie = str(login_resp_headers.get("Set-Cookie", "")).split(";", 1)[0].strip()
         common_headers = {
-            "Content-Type": "application/json; charset=utf-8",
+            "Content-Type": "application/json",
             "Authorization": f"Bearer {token}",
         }
         if session_cookie:

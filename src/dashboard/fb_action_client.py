@@ -157,7 +157,7 @@ class FBActionClient:
         return True, ""
 
     def _login(self) -> tuple[bool, str, dict[str, Any]]:
-        login_headers = {"Content-Type": "application/json; charset=utf-8"}
+        login_headers = {"Content-Type": "application/json"}
         if self.basic_user or self.basic_pass:
             login_headers["Authorization"] = _build_basic_auth(self.basic_user, self.basic_pass)
         if self.login_cookies:
@@ -183,7 +183,7 @@ class FBActionClient:
         return False, msg, {"status_code": status, "response_json": resp_json}
 
     def _auth_headers(self) -> dict[str, str]:
-        headers = {"Content-Type": "application/json; charset=utf-8", "Authorization": f"Bearer {self._token}"}
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {self._token}"}
         if self._cookie:
             headers["Cookie"] = self._cookie
         return headers
