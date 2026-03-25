@@ -54,6 +54,9 @@ def main() -> None:
                 "API 同步失败，已回退现有样本数据。"
                 f" 原因：{sync_result.get('message', 'unknown')}"
             )
+        with st.expander("API 同步调试详情（临时）", expanded=True):
+            st.caption("以下为本次同步请求与响应原文（用于排查 401/鉴权/网关问题）。")
+            st.json(sync_result)
 
     render_sidebar()
     render_today_board()

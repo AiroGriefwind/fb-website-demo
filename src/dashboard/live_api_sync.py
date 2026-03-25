@@ -6,7 +6,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from urllib import parse, request
+from urllib import error, parse, request
 
 import streamlit as st
 from dotenv import dotenv_values
@@ -81,16 +81,54 @@ def _normalize_endpoint_url(raw_base_url: str) -> str:
     return f"{base}/fb-scheduler/"
 
 
-def _json_post(url: str, payload: dict[str, Any], headers: dict[str, str]) -> tuple[int, dict[str, str], Any]:
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+def _safe_json_decode(raw_text: str) -> Any:
+    try:
+        return json.loads(raw_text)
+    except json.JSONDecodeError:
+        return {"raw_text": raw_text}
+
+
+def _json_post(url: str, payload: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
+    body_json = {k: v for k, v in payload.items() if v is not None}
+    body_raw = json.dumps(body_json, ensure_ascii=False)
+    body = body_raw.encode("utf-8")
     req = request.Request(url, data=body, headers=headers, method="POST")
-    with request.urlopen(req, timeout=20) as resp:
-        text = resp.read().decode("utf-8", errors="replace")
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError:
-            data = {"raw_text": text}
-        return resp.getcode(), dict(resp.headers), data
+    req_payload = {
+        "method": "POST",
+        "url": url,
+        "headers": headers,
+        "body_json": body_json,
+        "body_raw": body_raw,
+    }
+    try:
+        with request.urlopen(req, timeout=20) as resp:
+            text = resp.read().decode("utf-8", errors="replace")
+            return {
+                "ok": True,
+                "status_code": resp.getcode(),
+                "request": req_payload,
+                "response_headers": dict(resp.headers),
+                "response_json": _safe_json_decode(text),
+            }
+    except error.HTTPError as exc:
+        text = exc.read().decode("utf-8", errors="replace")
+        return {
+            "ok": False,
+            "status_code": int(exc.code or 0),
+            "request": req_payload,
+            "response_headers": dict(exc.headers),
+            "response_json": _safe_json_decode(text),
+            "error": f"HTTPError: {exc.reason}",
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "status_code": 0,
+            "request": req_payload,
+            "response_headers": {},
+            "response_json": {},
+            "error": str(exc),
+        }
 
 
 def _write_rows(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -396,15 +434,21 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
             raw = f"{basic_user}:{basic_pass}".encode("utf-8")
             login_headers["Authorization"] = f"Basic {base64.b64encode(raw).decode('ascii')}"
 
-        code, login_resp_headers, login_payload = _json_post(
+        login_result = _json_post(
             api_url,
             {"action": "login", "username": username, "password": password},
             login_headers,
         )
+        login_payload = login_result.get("response_json", {})
         token = str((login_payload.get("data", {}) if isinstance(login_payload, dict) else {}).get("token", "")).strip()
-        if code != 200 or not token:
-            return {"ok": False, "message": f"login failed ({code})", "login_payload": login_payload}
+        if not login_result.get("ok") or not token:
+            return {
+                "ok": False,
+                "message": f"login failed ({int(login_result.get('status_code', 0))})",
+                "debug": {"login": login_result},
+            }
 
+        login_resp_headers = login_result.get("response_headers", {})
         session_cookie = str(login_resp_headers.get("Set-Cookie", "")).split(";", 1)[0].strip()
         common_headers = {
             "Content-Type": "application/json; charset=utf-8",
@@ -413,8 +457,20 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
         if session_cookie:
             common_headers["Cookie"] = session_cookie
 
-        _, _, published_payload = _json_post(api_url, {"action": "fb_published"}, common_headers)
-        _, _, scheduled_payload = _json_post(api_url, {"action": "fb_scheduled"}, common_headers)
+        published_result = _json_post(api_url, {"action": "fb_published"}, common_headers)
+        if not published_result.get("ok"):
+            return {
+                "ok": False,
+                "message": f"fb_published failed ({int(published_result.get('status_code', 0))})",
+                "debug": {"login": login_result, "fb_published": published_result},
+            }
+        scheduled_result = _json_post(api_url, {"action": "fb_scheduled"}, common_headers)
+        if not scheduled_result.get("ok"):
+            return {
+                "ok": False,
+                "message": f"fb_scheduled failed ({int(scheduled_result.get('status_code', 0))})",
+                "debug": {"login": login_result, "fb_published": published_result, "fb_scheduled": scheduled_result},
+            }
 
         now_iso = datetime.now(HKT_TZ).isoformat()
         fan_page_id = str(target_fan_page_id or _secret_or_env("TARGET_FAN_PAGE_ID", "350584865140118")).strip()
@@ -422,11 +478,24 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
         seen_pending: set[str] = set()
         posts_items_all: list[dict[str, Any]] = []
         for cat in CATEGORY_ORDER:
-            _, _, posts_payload = _json_post(
+            posts_result = _json_post(
                 api_url,
                 {"action": "posts", "category": cat, "search": "", "limit": posts_limit},
                 common_headers,
             )
+            if not posts_result.get("ok"):
+                return {
+                    "ok": False,
+                    "message": f"posts({cat}) failed ({int(posts_result.get('status_code', 0))})",
+                    "debug": {
+                        "login": login_result,
+                        "fb_published": published_result,
+                        "fb_scheduled": scheduled_result,
+                        "posts_failed_category": cat,
+                        "posts": posts_result,
+                    },
+                }
+            posts_payload = posts_result.get("response_json", {})
             current_posts_items = _extract_data_list(posts_payload)
             posts_items_all.extend(current_posts_items)
             for row in _to_pending_rows(
@@ -442,14 +511,14 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
 
         cms_id_by_post_link_id, cms_id_by_post_link = _build_cms_reference_maps(posts_items_all)
         published_rows = _to_published_rows(
-            _extract_data_list(published_payload),
+            _extract_data_list(published_result.get("response_json", {})),
             enable_alias_mode=enable_category_alias_mode,
             cms_id_by_post_link_id=cms_id_by_post_link_id,
             cms_id_by_post_link=cms_id_by_post_link,
         )
         scheduled_thumb_fallback_map = _build_scheduled_thumb_map(pending_rows_all)
         scheduled_rows = _to_scheduled_rows(
-            _extract_data_list(scheduled_payload),
+            _extract_data_list(scheduled_result.get("response_json", {})),
             enable_alias_mode=enable_category_alias_mode,
             thumb_fallback_map=scheduled_thumb_fallback_map,
             cms_id_by_post_link_id=cms_id_by_post_link_id,
@@ -467,6 +536,11 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
             "pending_count": len(pending_rows_all),
             "source_url": api_url,
             "target_fan_page_id": fan_page_id,
+            "debug": {
+                "login": login_result,
+                "fb_published": published_result,
+                "fb_scheduled": scheduled_result,
+            },
         }
     except Exception as exc:  # noqa: BLE001 - keep dashboard alive on sync failure.
         return {"ok": False, "message": str(exc)}
