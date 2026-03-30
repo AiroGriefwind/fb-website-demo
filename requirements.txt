@@ -3,3 +3,5 @@ python-dotenv
 firebase-admin
 pytz
 streamlit
+fastapi
+uvicorn

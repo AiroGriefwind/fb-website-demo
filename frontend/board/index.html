@@ -1,0 +1,997 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Board MVP</title>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+      :root {
+        --bg: #f5f7fd;
+        --panel: #ffffff;
+        --line: #dde4f4;
+        --ink: #1f2434;
+        --muted: #66708f;
+        --primary: #2e5bff;
+        --col-width: 260px;
+        --col-gap: 10px;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: Arial, sans-serif; background: var(--bg); color: var(--ink); }
+      .layout { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; transition: grid-template-columns .2s ease; }
+      .layout.sidebar-collapsed { grid-template-columns: 24px 1fr; }
+      .sidebar {
+        border-right: 1px solid var(--line);
+        background: rgba(21, 24, 36, 0.04);
+        backdrop-filter: saturate(150%) blur(14px);
+        -webkit-backdrop-filter: saturate(150%) blur(14px);
+        padding: 14px 12px;
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        overflow-y: auto;
+        overflow-x: visible;
+      }
+      .layout.sidebar-collapsed .sidebar-content { display: none; }
+      .collapse-toggle {
+        position: absolute;
+        right: -12px;
+        top: 12px;
+        width: 24px;
+        height: 24px;
+        border-radius: 999px;
+        border: 1px solid #c7d1ea;
+        background: #fff;
+        color: #334;
+        cursor: pointer;
+        font-size: 14px;
+        z-index: 12;
+      }
+      .side-title { font-size: 16px; font-weight: 700; margin: 0 0 10px; }
+      .side-block { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 10px; background: #fff; }
+      .side-sub { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+      .chip-row { display: flex; gap: 6px; flex-wrap: wrap; }
+      .chip {
+        border: 1px solid #cad4ee;
+        border-radius: 999px;
+        background: #fff;
+        padding: 4px 10px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .chip.active { background: #e8efff; border-color: #89a2f6; color: #1e3eaf; }
+      .main { min-width: 0; }
+      .header { position: sticky; top: 0; background: var(--panel); border-bottom: 1px solid var(--line); padding: 10px 14px; z-index: 7; }
+      .header .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .btn {
+        border: 1px solid #c7d1ea;
+        background: #fff;
+        border-radius: 8px;
+        padding: 6px 10px;
+        cursor: pointer;
+        font-size: 12px;
+      }
+      .btn.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+      .btn.tiny { padding: 4px 8px; font-size: 11px; }
+      .field { width: 100%; border: 1px solid #ccd6ef; border-radius: 8px; padding: 6px 8px; font-size: 12px; margin-bottom: 8px; }
+      .msg { padding: 8px 2px 0; font-size: 13px; color: #2f3f6b; }
+      .loading { opacity: 0.7; pointer-events: none; }
+      .board-wrap { overflow-x: auto; padding: 12px; }
+      .board { display: grid; grid-template-columns: repeat(9, var(--col-width)); gap: var(--col-gap); min-width: 2440px; }
+      .col { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; min-height: 520px; position: relative; }
+      .col.sticky-1 { position: sticky; left: 0; z-index: 5; box-shadow: 6px 0 10px rgba(36, 49, 88, 0.06); }
+      .col.sticky-2 { position: sticky; left: calc(var(--col-width) + var(--col-gap)); z-index: 5; box-shadow: 6px 0 10px rgba(36, 49, 88, 0.04); }
+      .col .title { border-bottom: 1px solid #edf1fb; padding: 8px 10px; font-weight: 700; font-size: 14px; background: #fff; border-radius: 10px 10px 0 0; }
+      .stack { padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+      .card { border: 1px solid #dce4f8; border-radius: 8px; background: #fbfcff; padding: 8px; }
+      .thumb { width: 100%; height: 120px; object-fit: cover; border-radius: 6px; background: #eff3fc; border: 1px solid #e5ebfb; }
+      .meta { font-size: 12px; color: #556; margin: 6px 0 4px; }
+      .title-text {
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 1.35;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .actions { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
+      .empty { color: #7f88a8; font-size: 12px; text-align: center; padding: 10px 0; }
+      .tiny { font-size: 11px; color: var(--muted); }
+      .trend-item { border-top: 1px dashed #e2e8fb; padding-top: 6px; margin-top: 6px; }
+      .trend-keyword { font-size: 12px; font-weight: 700; }
+      .trend-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+      .modal-mask {
+        position: fixed;
+        inset: 0;
+        background: rgba(18, 24, 40, 0.36);
+        backdrop-filter: blur(2px);
+        -webkit-backdrop-filter: blur(2px);
+        z-index: 80;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+      }
+      .modal {
+        width: min(620px, 96vw);
+        background: #fff;
+        border: 1px solid #d7e0f5;
+        border-radius: 12px;
+        box-shadow: 0 18px 44px rgba(15, 28, 66, 0.22);
+        padding: 14px;
+      }
+      .modal h3 { margin: 0; font-size: 18px; }
+      .modal .row { display: flex; gap: 8px; }
+      .modal .row > * { flex: 1; min-width: 0; }
+      .modal .actions { justify-content: flex-end; margin-top: 12px; }
+      .error-text { font-size: 12px; color: #bf1f3d; margin-top: 6px; }
+      @media (max-width: 1024px) {
+        .layout, .layout.sidebar-collapsed { grid-template-columns: 1fr; }
+        .sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+        .collapse-toggle { display: none; }
+        .sidebar-content { display: block !important; }
+      }
+    </style>
+  </head>
+  <body x-data="boardApp()" x-init="init()">
+    <div class="layout" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
+      <aside class="sidebar">
+        <button class="collapse-toggle" @click="sidebarCollapsed = !sidebarCollapsed" :title="sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'">
+          <span x-text="sidebarCollapsed ? '›' : '‹'"></span>
+        </button>
+        <div class="sidebar-content">
+          <h2 class="side-title">看板侧边栏</h2>
+
+          <div class="side-block">
+            <div class="side-sub">数据模式</div>
+            <div class="chip-row">
+              <button class="chip" :class="{ active: mode === 'mock' }" @click="switchMode('mock')">Mock</button>
+              <button class="chip" :class="{ active: mode === 'live' }" @click="switchMode('live')">Live API</button>
+            </div>
+            <div class="tiny" style="margin-top:8px;">Mock 下动作只改前端本地数据，便于调 UI。</div>
+          </div>
+
+          <div class="side-block">
+            <div class="side-sub">栏目筛选</div>
+            <div class="chip-row">
+              <button class="chip" :class="{ active: selectedCategory === 'ALL' }" @click="selectedCategory = 'ALL'; rebuildColumns()">全部</button>
+              <template x-for="cat in categoryOrder" :key="cat">
+                <button class="chip" :class="{ active: selectedCategory === cat }" @click="selectedCategory = cat; rebuildColumns()" x-text="cat"></button>
+              </template>
+            </div>
+          </div>
+
+          <div class="side-block">
+            <div class="side-sub">Google Trends（香港）</div>
+            <div class="chip-row" style="margin-bottom:8px;">
+              <button class="chip" :class="{ active: trendSortMode === 'time' }" @click="trendSortMode='time'; loadTrends()">开始时间</button>
+              <button class="chip" :class="{ active: trendSortMode === 'volume' }" @click="trendSortMode='volume'; loadTrends()">搜索量</button>
+              <button class="btn tiny" @click="refreshTrendsRss()">↻ RSS</button>
+            </div>
+            <template x-if="(trends.items || []).length === 0">
+              <div class="tiny">暂无趋势数据</div>
+            </template>
+            <template x-for="item in (trends.items || []).slice(0, 6)" :key="item.keyword + '_' + item.published_at">
+              <div class="trend-item">
+                <div class="trend-keyword" x-text="item.keyword"></div>
+                <div class="trend-meta" x-text="(item.search_volume || 'N/A') + ' · ' + (item.published_at || '')"></div>
+              </div>
+            </template>
+            <div class="tiny" style="margin-top:8px;">
+              数据源：
+              <a :href="trends.source_url || '#'" target="_blank" rel="noopener noreferrer" x-text="trends.source === 'rss' ? 'Google Trends RSS' : '本地样本'"></a>
+              <br />
+              刷新时间：<span x-text="trends.refreshed_at || '-'"></span>
+            </div>
+          </div>
+
+          <div class="side-block">
+            <div class="side-sub">设置</div>
+            <label class="tiny">排程窗口（分钟）</label>
+            <select class="field" x-model.number="settings.schedule_window_minutes">
+              <option value="5">5</option>
+              <option value="10">10</option>
+              <option value="15">15</option>
+              <option value="20">20</option>
+              <option value="30">30</option>
+            </select>
+            <label class="tiny"><input type="checkbox" x-model="settings.enable_category_alias_mode" /> 启用分类归一化</label>
+            <label class="tiny" style="display:block; margin-top:6px;"><input type="checkbox" x-model="settings.enable_board_fallback_mode" /> 启用看板渲染兜底</label>
+            <label class="tiny" style="display:block; margin-top:8px;">测试 Fan Page ID</label>
+            <input class="field" type="text" x-model="settings.target_fan_page_id" />
+            <button class="btn primary" @click="saveSettings()">保存设置</button>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="header">
+          <div class="row">
+            <button class="btn primary" @click="reloadAll" :disabled="loading">刷新全部</button>
+            <button class="btn" @click="toggleAutoPoll">
+              <span x-text="autoPoll ? '停止自动刷新(20s)' : '开启自动刷新(20s)'"></span>
+            </button>
+            <span class="tiny">模式：<strong x-text="mode.toUpperCase()"></strong></span>
+          </div>
+          <div class="msg" x-text="message"></div>
+        </div>
+
+        <div class="board-wrap" :class="{ loading: loading }">
+          <div class="board">
+            <template x-for="(col, idx) in columns" :key="col.id">
+              <div class="col" :class="{ 'sticky-1': idx === 0, 'sticky-2': idx === 1 }">
+                <div class="title" x-text="col.title"></div>
+                <div class="stack">
+                  <template x-if="(col.items || []).length === 0">
+                    <div class="empty">暂无数据</div>
+                  </template>
+                  <template x-for="item in col.items" :key="item.post_link_id || item.item_id || item.title">
+                    <div class="card">
+                      <img class="thumb" :src="resolveThumb(item)" @error="onThumbError($event)" alt="thumbnail" />
+                      <div class="meta" x-text="item.publish_time || ''"></div>
+                      <div class="title-text" x-text="item.title || 'N/A'"></div>
+                      <div class="actions">
+                        <template x-if="col.kind === 'pending'">
+                          <button class="btn" @click="openScheduleDialog(item)">排程</button>
+                        </template>
+                        <template x-if="col.kind === 'scheduled'">
+                          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                            <button class="btn" @click="openUpdateDialog(item)">修改</button>
+                            <button class="btn" @click="openDeleteDialog(item)">返回已出未排</button>
+                            <button class="btn" @click="toggleLock(item)" x-text="item.is_locked ? '解锁' : '锁定'"></button>
+                          </div>
+                        </template>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <div class="modal-mask" x-show="dialogs.schedule.open" x-transition.opacity>
+          <div class="modal">
+            <h3>设置排程时间</h3>
+            <div class="tiny" style="margin:6px 0 10px;" x-text="'目标贴文：' + (dialogs.schedule.item?.title || 'N/A')"></div>
+            <div class="tiny" style="margin-bottom:8px;" x-text="windowHintText()"></div>
+            <div class="row">
+              <select class="field" x-model.number="forms.schedule.hour" @change="refreshScheduleSlots()">
+                <template x-for="h in scheduleSlots.hours" :key="'sh_'+h"><option :value="h" x-text="String(h).padStart(2,'0')"></option></template>
+              </select>
+              <select class="field" x-model.number="forms.schedule.minute">
+                <template x-for="m in scheduleSlots.minutes" :key="'sm_'+m"><option :value="m" x-text="String(m).padStart(2,'0')"></option></template>
+              </select>
+            </div>
+            <div class="row">
+              <select class="field" x-model.number="forms.schedule.year" @change="refreshScheduleSlots()">
+                <template x-for="y in yearOptions(forms.schedule.year)" :key="'sy_'+y"><option :value="y" x-text="y"></option></template>
+              </select>
+              <select class="field" x-model.number="forms.schedule.month" @change="refreshScheduleSlots()">
+                <template x-for="m in monthOptions" :key="'smo_'+m"><option :value="m" x-text="String(m).padStart(2,'0')"></option></template>
+              </select>
+              <select class="field" x-model.number="forms.schedule.day" @change="refreshScheduleSlots()">
+                <template x-for="d in dayOptions(forms.schedule.year, forms.schedule.month)" :key="'sd_'+d"><option :value="d" x-text="String(d).padStart(2,'0')"></option></template>
+              </select>
+            </div>
+            <div class="error-text" x-show="dialogs.schedule.error" x-text="dialogs.schedule.error"></div>
+            <div class="actions">
+              <button class="btn" @click="closeDialog('schedule')">取消</button>
+              <button class="btn primary" @click="confirmSchedule()">确认排程</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-mask" x-show="dialogs.update.open" x-transition.opacity>
+          <div class="modal">
+            <h3>修改贴文</h3>
+            <div class="tiny" style="margin:6px 0 10px;" x-text="'目标贴文：' + (dialogs.update.item?.title || 'N/A')"></div>
+            <div class="tiny" style="margin-bottom:8px;" x-text="windowHintText()"></div>
+            <div class="row">
+              <select class="field" x-model.number="forms.update.hour" @change="refreshUpdateSlots()">
+                <template x-for="h in updateSlots.hours" :key="'uh_'+h"><option :value="h" x-text="String(h).padStart(2,'0')"></option></template>
+              </select>
+              <select class="field" x-model.number="forms.update.minute">
+                <template x-for="m in updateSlots.minutes" :key="'um_'+m"><option :value="m" x-text="String(m).padStart(2,'0')"></option></template>
+              </select>
+            </div>
+            <div class="row">
+              <select class="field" x-model.number="forms.update.year" @change="refreshUpdateSlots()">
+                <template x-for="y in yearOptions(forms.update.year)" :key="'uy_'+y"><option :value="y" x-text="y"></option></template>
+              </select>
+              <select class="field" x-model.number="forms.update.month" @change="refreshUpdateSlots()">
+                <template x-for="m in monthOptions" :key="'umo_'+m"><option :value="m" x-text="String(m).padStart(2,'0')"></option></template>
+              </select>
+              <select class="field" x-model.number="forms.update.day" @change="refreshUpdateSlots()">
+                <template x-for="d in dayOptions(forms.update.year, forms.update.month)" :key="'ud_'+d"><option :value="d" x-text="String(d).padStart(2,'0')"></option></template>
+              </select>
+            </div>
+            <select class="field" x-model="forms.update.post_link_type">
+              <option value="link">link</option>
+              <option value="text">text</option>
+              <option value="photo">photo</option>
+              <option value="video">video</option>
+            </select>
+            <textarea class="field" style="min-height:120px;" x-model="forms.update.post_message" placeholder="贴文内容"></textarea>
+            <input class="field" type="text" x-model="forms.update.image_url" :placeholder="forms.update.post_link_type === 'photo' ? '图片 URL（必填）' : '图片 URL（选填）'" />
+            <input class="field" type="text" x-model="forms.update.post_mp4_url" :placeholder="forms.update.post_link_type === 'video' ? '视频 URL（必填）' : '视频 URL（选填）'" />
+            <div class="error-text" x-show="dialogs.update.error" x-text="dialogs.update.error"></div>
+            <div class="actions">
+              <button class="btn" @click="closeDialog('update')">返回</button>
+              <button class="btn primary" @click="confirmUpdate()">确认修改</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-mask" x-show="dialogs.delete.open" x-transition.opacity>
+          <div class="modal">
+            <h3>确认删除排程</h3>
+            <div class="tiny" style="margin-top:8px;" x-text="'确认将《' + (dialogs.delete.item?.title || 'N/A') + '》返回已出未排？'"></div>
+            <div class="tiny" style="margin-top:4px;" x-text="'当前排程：' + (dialogs.delete.item?.publish_time || 'N/A')"></div>
+            <div class="error-text" x-show="dialogs.delete.error" x-text="dialogs.delete.error"></div>
+            <div class="actions">
+              <button class="btn" @click="closeDialog('delete')">返回</button>
+              <button class="btn primary" @click="confirmDelete()">确认</button>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <script>
+      function boardApp() {
+        return {
+          loading: false,
+          autoPoll: false,
+          pollTimer: null,
+          sidebarCollapsed: false,
+          mode: "mock",
+          selectedCategory: "ALL",
+          message: "准备就绪",
+          raw: null,
+          columns: [],
+          trends: { items: [], source: "sample", source_url: "", refreshed_at: "" },
+          trendSortMode: "time",
+          settings: {
+            schedule_window_minutes: 10,
+            enable_category_alias_mode: false,
+            enable_board_fallback_mode: false,
+            target_fan_page_id: "350584865140118",
+          },
+          dialogs: {
+            schedule: { open: false, item: null, error: "" },
+            update: { open: false, item: null, error: "" },
+            delete: { open: false, item: null, error: "" },
+          },
+          forms: {
+            schedule: { year: 0, month: 0, day: 0, hour: 0, minute: 0 },
+            update: {
+              year: 0, month: 0, day: 0, hour: 0, minute: 0,
+              post_link_type: "link", post_message: "", image_url: "", post_mp4_url: "",
+            },
+          },
+          scheduleSlots: { hours: [], minutes: [] },
+          updateSlots: { hours: [], minutes: [] },
+          categoryOrder: ["娛樂", "社會事", "大視野", "兩岸", "法庭事", "消費", "心韓"],
+          dummyThumb: "/assets/Dummy1.png",
+          fallbackSvg: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='640' height='360'><rect width='100%25' height='100%25' fill='%23e9eefb'/><text x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%23627196' font-size='28' font-family='Arial'>FB DUMMY</text></svg>",
+          monthOptions: [1,2,3,4,5,6,7,8,9,10,11,12],
+          init() {
+            this.loadTrends();
+            this.loadSettings();
+            this.reloadAll();
+          },
+          switchMode(nextMode) {
+            this.mode = nextMode;
+            this.reloadAll();
+          },
+          async reloadAll() {
+            if (this.mode === "mock") {
+              this.raw = this.buildMockPayload();
+              this.rebuildColumns();
+              this.message = "Mock 数据已加载：" + new Date().toLocaleTimeString();
+              return;
+            }
+            await this.fetchColumns("");
+          },
+          async fetchColumns(includeExpr) {
+            this.loading = true;
+            try {
+              const query = includeExpr ? ("?include=" + encodeURIComponent(includeExpr)) : "";
+              const res = await fetch("/api/board/columns" + query);
+              if (!res.ok) throw new Error("load columns failed");
+              const data = await res.json();
+              if (!this.raw || !includeExpr) {
+                this.raw = data;
+              } else {
+                if (Array.isArray(data.published) && includeExpr.includes("published")) this.raw.published = data.published;
+                if (Array.isArray(data.scheduled) && includeExpr.includes("scheduled")) this.raw.scheduled = data.scheduled;
+                const pending = data.pending_by_category || {};
+                Object.keys(pending).forEach((k) => {
+                  if (!this.raw.pending_by_category) this.raw.pending_by_category = {};
+                  this.raw.pending_by_category[k] = pending[k];
+                });
+              }
+              this.rebuildColumns();
+              this.message = "Live 数据已刷新：" + new Date().toLocaleTimeString();
+            } catch (e) {
+              this.message = "加载失败: " + e.message;
+            } finally {
+              this.loading = false;
+            }
+          },
+          async loadTrends() {
+            try {
+              const res = await fetch("/api/sidebar/trends?sort=" + encodeURIComponent(this.trendSortMode));
+              if (!res.ok) throw new Error("trends failed");
+              this.trends = await res.json();
+            } catch (e) {
+              this.trends = { items: [], source: "sample", source_url: "", refreshed_at: "" };
+            }
+          },
+          async refreshTrendsRss() {
+            try {
+              const res = await fetch("/api/sidebar/trends/refresh", { method: "POST" });
+              const data = await res.json().catch(() => ({}));
+              if (!res.ok) throw new Error(data.detail || "rss refresh failed");
+              await this.loadTrends();
+              this.message = data.ok ? "RSS 已刷新" : "RSS 不可用，保留现有数据";
+            } catch (e) {
+              this.message = "RSS 刷新失败: " + e.message;
+            }
+          },
+          async loadSettings() {
+            try {
+              const res = await fetch("/api/sidebar/settings");
+              if (!res.ok) throw new Error("settings load failed");
+              this.settings = await res.json();
+            } catch (e) {
+              // keep defaults
+            }
+          },
+          async saveSettings() {
+            try {
+              const res = await fetch("/api/sidebar/settings", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(this.settings),
+              });
+              const data = await res.json().catch(() => ({}));
+              if (!res.ok) throw new Error(data.detail || "save failed");
+              this.message = "设置已保存";
+            } catch (e) {
+              this.message = "设置保存失败: " + e.message;
+            }
+          },
+          rebuildColumns() {
+            const published = this.raw?.published || [];
+            const scheduled = this.raw?.scheduled || [];
+            const pending = this.raw?.pending_by_category || {};
+            const cols = [
+              { id: "published", title: "已發佈", kind: "published", items: published },
+              { id: "scheduled", title: "已排程", kind: "scheduled", items: scheduled },
+            ];
+            this.categoryOrder.forEach((cat) => {
+              if (this.selectedCategory !== "ALL" && this.selectedCategory !== cat) {
+                cols.push({ id: "pending-" + cat, title: cat + "（已出未排）", kind: "pending", category: cat, items: [] });
+                return;
+              }
+              cols.push({ id: "pending-" + cat, title: cat + "（已出未排）", kind: "pending", category: cat, items: pending[cat] || [] });
+            });
+            this.columns = cols;
+          },
+          openScheduleDialog(item) {
+            const now = new Date();
+            const rounded = this.roundUpDate(now, this.settings.schedule_window_minutes || 10);
+            this.forms.schedule = {
+              year: rounded.getFullYear(),
+              month: rounded.getMonth() + 1,
+              day: rounded.getDate(),
+              hour: rounded.getHours(),
+              minute: rounded.getMinutes(),
+            };
+            this.dialogs.schedule = { open: true, item: item, error: "" };
+            this.refreshScheduleSlots();
+          },
+          async confirmSchedule() {
+            const item = this.dialogs.schedule.item;
+            if (!item) return;
+            const when = this.buildTimeString(this.forms.schedule);
+            const cat = String(item.category || "");
+            if (!when) {
+              this.dialogs.schedule.error = "时间格式错误";
+              return;
+            }
+            if (this.mode === "mock") {
+              const mockResult = this.mockPublishWithRules(item, when);
+              if (!mockResult.ok) {
+                this.dialogs.schedule.error = mockResult.message || "排程失败";
+                return;
+              }
+              this.rebuildColumns();
+              this.closeDialog("schedule");
+              const shifted = Number(mockResult.shifted_count || 0);
+              const locked = Number(mockResult.locked_blocked_count || 0);
+              this.message = shifted || locked
+                ? `Mock：排程成功｜顺延 ${shifted} 篇｜锁定阻挡 ${locked} 次`
+                : "Mock：排程成功";
+              return;
+            }
+            try {
+              const payload = {
+                item_id: String(item.item_id || ""),
+                schedule_time: when,
+                window_minutes: Number(this.settings.schedule_window_minutes || 10),
+              };
+              const data = await this.callAction("/api/actions/publish", payload);
+              const include = "scheduled" + (cat ? (",pending:" + cat) : ",pending");
+              await this.fetchColumns(include);
+              const impact = data?.impact_report || {};
+              const shifted = Array.isArray(impact.shifted_rows) ? impact.shifted_rows.length : 0;
+              const locked = Array.isArray(impact.skipped_locked_rows) ? impact.skipped_locked_rows.length : 0;
+              if (shifted || locked) this.message = `排程成功｜顺延 ${shifted} 篇｜锁定跳过 ${locked} 篇`;
+              this.closeDialog("schedule");
+            } catch (e) {
+              this.dialogs.schedule.error = String(e.message || "排程失败");
+            }
+          },
+          openUpdateDialog(item) {
+            const base = this.parseToDate(item.publish_time) || new Date();
+            this.forms.update = {
+              year: base.getFullYear(),
+              month: base.getMonth() + 1,
+              day: base.getDate(),
+              hour: base.getHours(),
+              minute: this.alignMinute(base.getMinutes(), this.settings.schedule_window_minutes || 10),
+              post_link_type: String(item.post_link_type || "link"),
+              post_message: String(item.post_message || item.title || ""),
+              image_url: String(item.image_url || ""),
+              post_mp4_url: String(item.post_mp4_url || ""),
+            };
+            this.dialogs.update = { open: true, item: item, error: "" };
+            this.refreshUpdateSlots();
+          },
+          async confirmUpdate() {
+            const item = this.dialogs.update.item;
+            if (!item) return;
+            const when = this.buildTimeString(this.forms.update);
+            const pickedType = String(this.forms.update.post_link_type || "link").toLowerCase();
+            const pickedMsg = String(this.forms.update.post_message || "").trim();
+            const pickedImage = String(this.forms.update.image_url || "").trim();
+            const pickedMp4 = String(this.forms.update.post_mp4_url || "").trim();
+            if (!pickedMsg) {
+              this.dialogs.update.error = "贴文内容不能为空";
+              return;
+            }
+            if (pickedType === "photo" && !pickedImage) {
+              this.dialogs.update.error = "当前类型为 photo，图片 URL 不能为空";
+              return;
+            }
+            if (pickedType === "video" && !pickedMp4) {
+              this.dialogs.update.error = "当前类型为 video，视频 URL 不能为空";
+              return;
+            }
+            if (this.mode === "mock") {
+              const mockResult = this.mockUpdateWithRules(item, when, {
+                post_message: pickedMsg,
+                post_link_type: pickedType,
+                image_url: pickedImage,
+                post_mp4_url: pickedMp4,
+              });
+              if (!mockResult.ok) {
+                this.dialogs.update.error = mockResult.message || "修改失败";
+                return;
+              }
+              this.rebuildColumns();
+              this.closeDialog("update");
+              const shifted = Number(mockResult.shifted_count || 0);
+              const locked = Number(mockResult.locked_blocked_count || 0);
+              this.message = shifted || locked
+                ? `Mock：修改成功｜顺延 ${shifted} 篇｜锁定阻挡 ${locked} 次`
+                : "Mock：修改成功";
+              return;
+            }
+            try {
+              await this.callAction("/api/actions/update", {
+                post_id: Number(item.post_id || 0),
+                post_link_id: String(item.post_link_id || ""),
+                post_message: pickedMsg,
+                post_link_time: when,
+                post_link_type: pickedType,
+                image_url: pickedImage,
+                post_mp4_url: pickedMp4,
+                enforce_time_validation: true,
+                target_action_key: "plink:" + String(item.post_link_id || ""),
+                window_minutes: Number(this.settings.schedule_window_minutes || 10),
+              });
+              await this.fetchColumns("scheduled");
+              this.closeDialog("update");
+            } catch (e) {
+              this.dialogs.update.error = String(e.message || "修改失败");
+            }
+          },
+          openDeleteDialog(item) {
+            this.dialogs.delete = { open: true, item: item, error: "" };
+          },
+          async confirmDelete() {
+            const item = this.dialogs.delete.item;
+            if (!item) return;
+            const cat = String(item.category || "娛樂");
+            if (this.mode === "mock") {
+              this.mockDelete(item, cat);
+              this.rebuildColumns();
+              this.closeDialog("delete");
+              this.message = "Mock：已返回已出未排";
+              return;
+            }
+            try {
+              await this.callAction("/api/actions/delete", {
+                post_id: Number(item.post_id || 0),
+                post_link_id: String(item.post_link_id || ""),
+              });
+              const include = "scheduled" + (cat ? (",pending:" + cat) : ",pending");
+              await this.fetchColumns(include);
+              this.closeDialog("delete");
+            } catch (e) {
+              this.dialogs.delete.error = String(e.message || "删除失败");
+            }
+          },
+          closeDialog(kind) {
+            this.dialogs[kind] = { open: false, item: null, error: "" };
+          },
+          async toggleLock(item) {
+            if (this.mode === "mock") {
+              item.is_locked = !item.is_locked;
+              this.rebuildColumns();
+              this.message = "Mock：锁定状态已切换";
+              return;
+            }
+            const key = "plink:" + String(item.post_link_id || "");
+            await this.callAction("/api/actions/toggle-lock", { action_key: key });
+            await this.fetchColumns("scheduled");
+          },
+          async callAction(url, payload) {
+            this.loading = true;
+            try {
+              const res = await fetch(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+              });
+              const data = await res.json().catch(() => ({}));
+              if (!res.ok) throw new Error(data.detail || data.message || "action failed");
+              this.message = "操作成功：" + (data.message || "ok");
+              return data;
+            } catch (e) {
+              this.message = "操作失败：" + e.message;
+              throw e;
+            } finally {
+              this.loading = false;
+            }
+          },
+          windowHintText() {
+            const step = Number(this.settings.schedule_window_minutes || 10);
+            const mins = [];
+            for (let m = 0; m < 60; m += step) mins.push(String(m).padStart(2, "0"));
+            return `时间粒度：${step} 分钟（仅 ${mins.join("/")}）`;
+          },
+          yearOptions(baseYear) {
+            const y = Number(baseYear || new Date().getFullYear());
+            return [y - 1, y, y + 1, y + 2];
+          },
+          dayOptions(year, month) {
+            const y = Number(year || new Date().getFullYear());
+            const m = Number(month || 1);
+            const maxDay = new Date(y, m, 0).getDate();
+            return Array.from({ length: maxDay }, (_, i) => i + 1);
+          },
+          roundUpDate(dateObj, step) {
+            const d = new Date(dateObj.getTime());
+            d.setSeconds(0, 0);
+            const s = Number(step || 10);
+            if (s <= 0) return d;
+            const r = d.getMinutes() % s;
+            if (r !== 0) d.setMinutes(d.getMinutes() + (s - r));
+            return d;
+          },
+          alignMinute(minute, step) {
+            const s = Number(step || 10);
+            return Math.floor(Number(minute || 0) / s) * s;
+          },
+          parseToDate(raw) {
+            if (!raw) return null;
+            const d = new Date(raw);
+            return Number.isNaN(d.getTime()) ? null : d;
+          },
+          buildTimeString(form) {
+            const y = Number(form.year), m = Number(form.month), d = Number(form.day);
+            const hh = Number(form.hour), mm = Number(form.minute);
+            if (!y || !m || !d || Number.isNaN(hh) || Number.isNaN(mm)) return "";
+            return `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+          },
+          calcSlotsByDate(form, enforceFuture) {
+            const step = Number(this.settings.schedule_window_minutes || 10);
+            const now = new Date();
+            const slots = [];
+            for (let h = 0; h < 24; h++) {
+              for (let m = 0; m < 60; m += step) {
+                const d = new Date(Number(form.year), Number(form.month) - 1, Number(form.day), h, m, 0, 0);
+                if (!enforceFuture || d > now) slots.push({ h, m });
+              }
+            }
+            if (!slots.length) {
+              for (let h = 0; h < 24; h++) for (let m = 0; m < 60; m += step) slots.push({ h, m });
+            }
+            return slots;
+          },
+          refreshScheduleSlots() {
+            const slots = this.calcSlotsByDate(this.forms.schedule, true);
+            const hours = [...new Set(slots.map((x) => x.h))];
+            if (!hours.includes(Number(this.forms.schedule.hour))) this.forms.schedule.hour = hours[0];
+            const minutes = slots.filter((x) => x.h === Number(this.forms.schedule.hour)).map((x) => x.m);
+            if (!minutes.includes(Number(this.forms.schedule.minute))) this.forms.schedule.minute = minutes[0];
+            this.scheduleSlots = { hours, minutes };
+          },
+          refreshUpdateSlots() {
+            const slots = this.calcSlotsByDate(this.forms.update, true);
+            const hours = [...new Set(slots.map((x) => x.h))];
+            if (!hours.includes(Number(this.forms.update.hour))) this.forms.update.hour = hours[0];
+            const minutes = slots.filter((x) => x.h === Number(this.forms.update.hour)).map((x) => x.m);
+            if (!minutes.includes(Number(this.forms.update.minute))) this.forms.update.minute = minutes[0];
+            this.updateSlots = { hours, minutes };
+          },
+          toggleAutoPoll() {
+            this.autoPoll = !this.autoPoll;
+            if (!this.autoPoll) {
+              if (this.pollTimer) window.clearInterval(this.pollTimer);
+              this.pollTimer = null;
+              return;
+            }
+            this.pollTimer = window.setInterval(() => {
+              this.reloadAll();
+            }, 20000);
+          },
+          resolveThumb(item) {
+            return item.thumbnail || item.image_url || this.dummyThumb;
+          },
+          onThumbError(event) {
+            if (event.target.src !== this.fallbackSvg) event.target.src = this.fallbackSvg;
+          },
+          toInputTime(raw) {
+            if (!raw) return "";
+            try {
+              const dt = new Date(raw);
+              if (Number.isNaN(dt.getTime())) return "";
+              const y = dt.getFullYear();
+              const m = String(dt.getMonth() + 1).padStart(2, "0");
+              const d = String(dt.getDate()).padStart(2, "0");
+              const hh = String(dt.getHours()).padStart(2, "0");
+              const mm = String(dt.getMinutes()).padStart(2, "0");
+              return `${y}-${m}-${d}T${hh}:${mm}`;
+            } catch {
+              return "";
+            }
+          },
+          slotKeyFromDate(dt) {
+            return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")} ${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
+          },
+          addMinutes(dt, mins) {
+            return new Date(dt.getTime() + Number(mins || 0) * 60000);
+          },
+          parseLocalInputTime(raw) {
+            const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(String(raw || "").trim());
+            if (!m) return null;
+            return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), 0, 0);
+          },
+          formatLocalInputTime(dt) {
+            return `${String(dt.getFullYear()).padStart(4, "0")}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}T${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
+          },
+          mockPublishWithRules(item, when) {
+            const step = Number(this.settings.schedule_window_minutes || 10);
+            const targetDt = this.parseLocalInputTime(when);
+            if (!targetDt) return { ok: false, message: "时间格式错误" };
+            if ((targetDt.getMinutes() % step) !== 0) return { ok: false, message: `时间必须符合 ${step} 分钟窗口` };
+            if (targetDt <= new Date()) return { ok: false, message: "不能排到过去时间" };
+
+            const scheduled = Array.isArray(this.raw?.scheduled) ? this.raw.scheduled : [];
+            const bySlot = new Map();
+            for (const row of scheduled) {
+              const dt = this.parseToDate(row.publish_time) || this.parseLocalInputTime(String(row.publish_time || ""));
+              if (!dt) continue;
+              const key = this.slotKeyFromDate(new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), dt.getHours(), dt.getMinutes(), 0, 0));
+              if (!bySlot.has(key)) bySlot.set(key, []);
+              bySlot.get(key).push(row);
+            }
+
+            const targetKey = this.slotKeyFromDate(targetDt);
+            const targetRows = bySlot.get(targetKey) || [];
+            if (targetRows.some((x) => Boolean(x.is_locked))) {
+              return { ok: false, message: "该时间窗口已锁定，不能排到这个时间" };
+            }
+
+            let carryRows = targetRows.filter((x) => !Boolean(x.is_locked));
+            let nextDt = this.addMinutes(targetDt, step);
+            let shiftedCount = 0;
+            let lockedBlocked = 0;
+            const moved = [];
+
+            while (carryRows.length > 0) {
+              let nextKey = this.slotKeyFromDate(nextDt);
+              let nextRows = bySlot.get(nextKey) || [];
+              while (nextRows.some((x) => Boolean(x.is_locked))) {
+                lockedBlocked += 1;
+                nextDt = this.addMinutes(nextDt, step);
+                nextKey = this.slotKeyFromDate(nextDt);
+                nextRows = bySlot.get(nextKey) || [];
+              }
+
+              const existingUnlocked = nextRows.filter((x) => !Boolean(x.is_locked));
+              for (const row of carryRows) {
+                const oldDt = this.parseToDate(row.publish_time) || this.parseLocalInputTime(String(row.publish_time || ""));
+                if (oldDt) {
+                  row.publish_time = this.formatLocalInputTime(nextDt);
+                  moved.push(row);
+                  shiftedCount += 1;
+                }
+              }
+              bySlot.set(nextKey, [...nextRows.filter((x) => Boolean(x.is_locked)), ...carryRows]);
+              carryRows = existingUnlocked;
+              nextDt = this.addMinutes(nextDt, step);
+            }
+
+            const cat = String(item.category || "娛樂");
+            if (!this.raw.pending_by_category[cat]) this.raw.pending_by_category[cat] = [];
+            this.raw.pending_by_category[cat] = this.raw.pending_by_category[cat].filter((x) => String(x.item_id) !== String(item.item_id));
+            this.raw.scheduled = this.raw.scheduled.filter((x) => !moved.includes(x));
+            this.raw.scheduled.push(...moved);
+            this.raw.scheduled.push({
+              ...item,
+              publish_time: when,
+              post_id: Number(item.post_id || item.item_id || 0),
+              post_link_id: String(item.post_link_id || ("mock_" + item.item_id)),
+              is_locked: Boolean(item.is_locked || false),
+            });
+            this.raw.scheduled.sort((a, b) => {
+              const ad = this.parseToDate(a.publish_time) || this.parseLocalInputTime(String(a.publish_time || ""));
+              const bd = this.parseToDate(b.publish_time) || this.parseLocalInputTime(String(b.publish_time || ""));
+              return (ad ? ad.getTime() : 0) - (bd ? bd.getTime() : 0);
+            });
+            return { ok: true, shifted_count: shiftedCount, locked_blocked_count: lockedBlocked };
+          },
+          mockValidateUpdateSlot(item, when) {
+            const step = Number(this.settings.schedule_window_minutes || 10);
+            const picked = this.parseLocalInputTime(when);
+            if (!picked) return { ok: false, message: "时间格式错误" };
+            if ((picked.getMinutes() % step) !== 0) return { ok: false, message: `时间必须符合 ${step} 分钟窗口` };
+            if (picked <= new Date()) return { ok: false, message: "不能设置过去时间" };
+            const pickedKey = this.slotKeyFromDate(picked);
+            const selfKey = "plink:" + String(item.post_link_id || "");
+            for (const row of (this.raw?.scheduled || [])) {
+              const rowKey = "plink:" + String(row.post_link_id || "");
+              if (rowKey === selfKey) continue;
+              const dt = this.parseToDate(row.publish_time) || this.parseLocalInputTime(String(row.publish_time || ""));
+              if (!dt) continue;
+              const slotKey = this.slotKeyFromDate(new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), dt.getHours(), dt.getMinutes(), 0, 0));
+              if (slotKey === pickedKey && Boolean(row.is_locked)) {
+                return { ok: false, message: "该时间窗口已锁定，不能修改到这个时间" };
+              }
+            }
+            return { ok: true };
+          },
+          mockUpdateWithRules(item, when, patch) {
+            const valid = this.mockValidateUpdateSlot(item, when);
+            if (!valid.ok) return valid;
+            const step = Number(this.settings.schedule_window_minutes || 10);
+            const targetDt = this.parseLocalInputTime(when);
+            if (!targetDt) return { ok: false, message: "时间格式错误" };
+
+            const selfKey = "plink:" + String(item.post_link_id || "");
+            const baseScheduled = (this.raw?.scheduled || []).filter((row) => {
+              const rowKey = "plink:" + String(row.post_link_id || "");
+              return rowKey !== selfKey;
+            });
+
+            const bySlot = new Map();
+            for (const row of baseScheduled) {
+              const dt = this.parseToDate(row.publish_time) || this.parseLocalInputTime(String(row.publish_time || ""));
+              if (!dt) continue;
+              const key = this.slotKeyFromDate(new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), dt.getHours(), dt.getMinutes(), 0, 0));
+              if (!bySlot.has(key)) bySlot.set(key, []);
+              bySlot.get(key).push(row);
+            }
+
+            const targetKey = this.slotKeyFromDate(targetDt);
+            const targetRows = bySlot.get(targetKey) || [];
+            if (targetRows.some((x) => Boolean(x.is_locked))) {
+              return { ok: false, message: "该时间窗口已锁定，不能修改到这个时间" };
+            }
+
+            let carryRows = targetRows.filter((x) => !Boolean(x.is_locked));
+            let nextDt = this.addMinutes(targetDt, step);
+            let shiftedCount = 0;
+            let lockedBlocked = 0;
+
+            while (carryRows.length > 0) {
+              let nextKey = this.slotKeyFromDate(nextDt);
+              let nextRows = bySlot.get(nextKey) || [];
+              while (nextRows.some((x) => Boolean(x.is_locked))) {
+                lockedBlocked += 1;
+                nextDt = this.addMinutes(nextDt, step);
+                nextKey = this.slotKeyFromDate(nextDt);
+                nextRows = bySlot.get(nextKey) || [];
+              }
+              const existingUnlocked = nextRows.filter((x) => !Boolean(x.is_locked));
+              for (const row of carryRows) {
+                row.publish_time = this.formatLocalInputTime(nextDt);
+                shiftedCount += 1;
+              }
+              bySlot.set(nextKey, [...nextRows.filter((x) => Boolean(x.is_locked)), ...carryRows]);
+              carryRows = existingUnlocked;
+              nextDt = this.addMinutes(nextDt, step);
+            }
+
+            const updatedItem = {
+              ...item,
+              ...patch,
+              publish_time: when,
+            };
+            this.raw.scheduled = [...baseScheduled, updatedItem];
+            this.raw.scheduled.sort((a, b) => {
+              const ad = this.parseToDate(a.publish_time) || this.parseLocalInputTime(String(a.publish_time || ""));
+              const bd = this.parseToDate(b.publish_time) || this.parseLocalInputTime(String(b.publish_time || ""));
+              return (ad ? ad.getTime() : 0) - (bd ? bd.getTime() : 0);
+            });
+            return { ok: true, shifted_count: shiftedCount, locked_blocked_count: lockedBlocked };
+          },
+          mockDelete(item, cat) {
+            this.raw.scheduled = this.raw.scheduled.filter((x) => String(x.post_link_id || "") !== String(item.post_link_id || ""));
+            if (!this.raw.pending_by_category[cat]) this.raw.pending_by_category[cat] = [];
+            this.raw.pending_by_category[cat].unshift({ ...item });
+          },
+          buildMockPayload() {
+            const now = new Date();
+            const toIso = (minutes) => new Date(now.getTime() + minutes * 60000).toISOString();
+            const pendingByCategory = {};
+            this.categoryOrder.forEach((cat, cidx) => {
+              pendingByCategory[cat] = Array.from({ length: 3 }).map((_, i) => {
+                const id = String(10000 + cidx * 100 + i);
+                return {
+                  item_id: id,
+                  post_id: Number(id),
+                  title: cat + " Mock 文章 " + (i + 1),
+                  category: cat,
+                  publish_time: toIso(-30 - i * 20),
+                  thumbnail: this.dummyThumb,
+                  post_message: cat + " Mock 文章 " + (i + 1),
+                  post_link_type: "link",
+                };
+              });
+            });
+            return {
+              published: [
+                { title: "已发布 Mock 1", publish_time: toIso(-120), thumbnail: "" },
+                { title: "已发布 Mock 2", publish_time: toIso(-240), thumbnail: this.dummyThumb },
+              ],
+              scheduled: [
+                {
+                  title: "已排程 Mock 1",
+                  category: "娛樂",
+                  publish_time: toIso(40),
+                  thumbnail: this.dummyThumb,
+                  post_id: 9001,
+                  post_link_id: "mock_sched_1",
+                  post_message: "已排程 Mock 1",
+                  post_link_type: "link",
+                  is_locked: false,
+                },
+              ],
+              pending_by_category: pendingByCategory,
+              generated_at: new Date().toISOString(),
+            };
+          },
+        };
+      }
+    </script>
+  </body>
+</html>
