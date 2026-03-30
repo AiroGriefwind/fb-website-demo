@@ -5,6 +5,7 @@ import json
 import textwrap
 from datetime import datetime, timedelta
 from html import escape
+from pathlib import Path
 from typing import Any
 
 import streamlit as st
@@ -16,6 +17,7 @@ from src.dashboard.config import (
     DEFAULT_SCHEDULE_WINDOW_MINUTES,
     HKT_TZ,
     SCHEDULE_WINDOW_OPTIONS,
+    WORKSPACE_ROOT,
 )
 from src.dashboard.data_utils import load_pending_base, load_published_items, load_scheduled_items
 from src.dashboard.fb_action_client import FBActionClient
@@ -27,6 +29,22 @@ from src.dashboard.scheduling_utils import (
     toggle_scheduled_lock,
 )
 from src.dashboard.style_utils import category_style_tokens
+
+UI_DEBUG_LOG = WORKSPACE_ROOT / "logs" / "dashboard_ui_debug.jsonl"
+
+
+def _log_ui_debug(event: str, data: dict[str, Any]) -> None:
+    entry = {
+        "ts": datetime.now(HKT_TZ).isoformat(),
+        "event": event,
+        "data": data,
+    }
+    try:
+        UI_DEBUG_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with UI_DEBUG_LOG.open("a", encoding="utf-8") as fp:
+            fp.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
 
 
 def _card_html(
@@ -218,7 +236,17 @@ def _process_pending_fb_action(scheduled_items: list[tuple[datetime, dict[str, A
     action_payload = st.session_state.get("pending_fb_action")
     if not isinstance(action_payload, dict) or not action_payload:
         return
+    if not bool(action_payload.get("_started", False)):
+        action_payload["_started"] = True
+        st.session_state["pending_fb_action"] = action_payload
+        st.session_state["_pending_action_needs_kick"] = True
+        _log_ui_debug(
+            "pending_action_stage_prepared",
+            {"action_type": str(action_payload.get("type", "")), "kick_needed": True},
+        )
+        st.rerun()
     action_type = str(action_payload.get("type", "")).strip()
+    _log_ui_debug("pending_action_execute_started", {"action_type": action_type})
     client = FBActionClient()
     st.session_state["fb_action_busy"] = True
     result: dict[str, Any]
@@ -808,6 +836,14 @@ def render_today_board() -> None:
         .st-key-delete_pick_commit {
             display: none !important;
         }
+        .st-key-pending_action_kick_commit {
+            position: absolute !important;
+            left: -10000px !important;
+            top: auto !important;
+            width: 1px !important;
+            height: 1px !important;
+            overflow: hidden !important;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -817,16 +853,58 @@ def render_today_board() -> None:
     st.button("unschedule_commit", key="unschedule_commit")
     st.button("update_pick_commit", key="update_pick_commit")
     st.button("delete_pick_commit", key="delete_pick_commit")
+    st.button("pending_action_kick_commit", key="pending_action_kick_commit")
+    _log_ui_debug(
+        "board_render_start",
+        {
+            "query_keys": sorted([str(k) for k in st.query_params.keys()]),
+            "query_schedule_pick": str(st.query_params.get("schedule_pick", "")),
+            "query_update_pick": str(st.query_params.get("update_pick", "")),
+            "query_delete_pick": str(st.query_params.get("delete_pick", "")),
+            "pending_fb_action": bool(st.session_state.get("pending_fb_action")),
+            "fb_action_busy": bool(st.session_state.get("fb_action_busy", False)),
+            "schedule_dialog_open": bool(st.session_state.get("schedule_dialog_open", False)),
+            "schedule_pick_item_id": str(st.session_state.get("schedule_pick_item_id", "")),
+        },
+    )
+
+    if bool(st.session_state.pop("_pending_action_needs_kick", False)):
+        _log_ui_debug("pending_action_kick_injected", {"delay_ms": 120})
+        st.caption("正在准备执行操作...")
+        components.html(
+            """
+            <script>
+            (function () {
+              window.setTimeout(function () {
+                try {
+                  const doc = window.parent.document;
+                  const btn = doc.querySelector('.st-key-pending_action_kick_commit button');
+                  if (btn) {
+                    btn.click();
+                  }
+                } catch (e) {
+                  // no-op
+                }
+              }, 120);
+            })();
+            </script>
+            """,
+            height=0,
+            scrolling=False,
+        )
+        return
+
     past_24h = now_hkt - timedelta(hours=24)
     next_24h = now_hkt + timedelta(hours=24)
 
-    published_items = _collect_time_sorted_items(load_published_items())
     scheduled_items = _collect_time_sorted_items(load_scheduled_items())
+    _process_pending_fb_action(scheduled_items=scheduled_items, now_hkt=now_hkt)
+
+    published_items = _collect_time_sorted_items(load_published_items())
     pending_items = _collect_time_sorted_items(load_pending_base())
     pending_lookup = {str(item.get("item_id", "")): item for _, item in pending_items if str(item.get("item_id", ""))}
     published_lookup = {_build_action_key(item): item for _, item in published_items}
     scheduled_lookup = {_build_action_key(item): item for _, item in scheduled_items}
-    _process_pending_fb_action(scheduled_items=scheduled_items, now_hkt=now_hkt)
 
     picked_raw = st.query_params.get("schedule_pick", "")
     if isinstance(picked_raw, list):
@@ -834,6 +912,14 @@ def render_today_board() -> None:
     else:
         picked_item_id = str(picked_raw).strip()
     if picked_item_id:
+        _log_ui_debug(
+            "schedule_pick_received",
+            {
+                "picked_item_id": picked_item_id,
+                "exists_in_pending_lookup": picked_item_id in pending_lookup,
+                "pending_lookup_size": len(pending_lookup),
+            },
+        )
         if picked_item_id in pending_lookup:
             st.session_state["settings_open"] = False
             last_item_id = str(st.session_state.get("schedule_pick_item_id", "")).strip()
@@ -854,6 +940,7 @@ def render_today_board() -> None:
     else:
         lock_key = str(lock_raw).strip()
     if lock_key:
+        _log_ui_debug("lock_toggle_received", {"lock_key": lock_key})
         st.session_state["settings_open"] = False
         ok, msg = toggle_scheduled_lock(lock_key)
         if ok:
@@ -874,6 +961,7 @@ def render_today_board() -> None:
     else:
         unschedule_key = str(unschedule_raw).strip()
     if unschedule_key:
+        _log_ui_debug("unschedule_pick_received", {"unschedule_key": unschedule_key})
         st.session_state["settings_open"] = False
         _close_all_dialog_flags()
         st.session_state["delete_dialog_open"] = True
@@ -891,6 +979,7 @@ def render_today_board() -> None:
     else:
         update_key = str(update_raw).strip()
     if update_key:
+        _log_ui_debug("update_pick_received", {"update_key": update_key})
         st.session_state["settings_open"] = False
         _close_all_dialog_flags()
         st.session_state["update_dialog_token"] = int(st.session_state.get("update_dialog_token", 0)) + 1
@@ -911,6 +1000,7 @@ def render_today_board() -> None:
     else:
         delete_payload = str(delete_raw).strip()
     if delete_payload:
+        _log_ui_debug("delete_pick_received", {"delete_payload": delete_payload})
         st.session_state["settings_open"] = False
         _close_all_dialog_flags()
         if ":" in delete_payload:

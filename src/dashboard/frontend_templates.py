@@ -57,13 +57,18 @@ def build_schedule_pick_script() -> str:
         }
 
         const bindAll = () => {
+          const scheduleButtons = board.querySelectorAll('.post-card-schedule-btn[data-item-id]');
+          const lockButtons = board.querySelectorAll('.post-card-lock-btn[data-schedule-key]');
+          const unscheduleButtons = board.querySelectorAll('.post-card-return-btn[data-unschedule-key]');
+          const editButtons = board.querySelectorAll('.post-card-edit-btn[data-edit-key]');
+          const deleteButtons = board.querySelectorAll('.post-card-delete-btn[data-delete-key]');
+
           const triggerCommit = (btn, commitAction) => {
             btn.classList.add('is-loading');
             btn.setAttribute('disabled', 'disabled');
             window.setTimeout(() => commitAction(), 90);
           };
 
-          const scheduleButtons = board.querySelectorAll('.post-card-schedule-btn[data-item-id]');
           scheduleButtons.forEach((btn) => {
             if (btn.dataset.bound === '1') return;
             btn.dataset.bound = '1';
@@ -84,7 +89,6 @@ def build_schedule_pick_script() -> str:
             });
           });
 
-          const lockButtons = board.querySelectorAll('.post-card-lock-btn[data-schedule-key]');
           lockButtons.forEach((btn) => {
             if (btn.dataset.bound === '1') return;
             btn.dataset.bound = '1';
@@ -107,7 +111,6 @@ def build_schedule_pick_script() -> str:
             });
           });
 
-          const unscheduleButtons = board.querySelectorAll('.post-card-return-btn[data-unschedule-key]');
           unscheduleButtons.forEach((btn) => {
             if (btn.dataset.bound === '1') return;
             btn.dataset.bound = '1';
@@ -130,7 +133,6 @@ def build_schedule_pick_script() -> str:
             });
           });
 
-          const editButtons = board.querySelectorAll('.post-card-edit-btn[data-edit-key]');
           editButtons.forEach((btn) => {
             if (btn.dataset.bound === '1') return;
             btn.dataset.bound = '1';
@@ -153,7 +155,6 @@ def build_schedule_pick_script() -> str:
             });
           });
 
-          const deleteButtons = board.querySelectorAll('.post-card-delete-btn[data-delete-key]');
           deleteButtons.forEach((btn) => {
             if (btn.dataset.bound === '1') return;
             btn.dataset.bound = '1';

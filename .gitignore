@@ -16,3 +16,8 @@ token.json
 !data/samples/*.json
 !configs/**/*.example.json
 data/runtime/review_events.jsonl
+logs/
+debug-*.log
+tmp_schedule_*.js
+.streamlit/
+data/samples/dashboard_settings_state.json
