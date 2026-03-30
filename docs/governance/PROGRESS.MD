@@ -1184,3 +1184,102 @@
 下一步:
 - 先推送一个 demo 远端备份分支保存旧 `main` 状态。
 - 再把 demo 远端 `main` 安全对齐到本地 `65d9bd4`，并回填新的远端 commit 记录。
+
+日期时间(HKT): 2026-03-30
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库）
+完成内容:
+- [本仓库] 新增独立后端入口 `src/dashboard_api/`：抽离 `CmsActionClient`（无 Streamlit 依赖）与看板服务层，统一承接 `publish/update/delete/toggle-lock` 动作边界，并复用现有同步链路回写样本数据。
+- [本仓库] 定义最小 HTTP API 契约并实现 `FastAPI` 服务：`GET /api/board/columns`（支持 `include=scheduled,pending:分類` 局部拉取）、`POST /api/actions/publish|update|delete|toggle-lock`、`GET /api/health`。
+- [本仓库] 新增独立前端看板 MVP `frontend/board/index.html`（Alpine.js）：覆盖九列展示、排程/修改/取消排程/锁定核心动作，并在动作后按受影响列执行局部 refetch（scheduled + 对应 pending 分类）。
+- [本仓库] 明确 Streamlit 迁移角色：`src/dashboard/app.py` 调整为“设置/调试控制台”入口，新增指向独立看板的跳转按钮（`DASHBOARD_BOARD_URL` 可配置）。
+- [本仓库] 依赖补齐：`requirements.txt` 增加 `fastapi`、`uvicorn`；新增 `src/dashboard_api/run.py` 作为本地启动脚本。
+
+验证结果:
+- 本地冒烟通过：`/api/health`、`/api/board/columns?include=scheduled,pending:娛樂`、`/board/` 均可访问并返回预期内容。
+- Python 导入检查通过：`from src.dashboard_api.server import app` 可正常加载路由。
+- `read_lints` 检查 `src/dashboard_api/` 与 `src/dashboard/app.py` 无新增诊断错误。
+
+风险/阻塞:
+- 当前写动作成功后仍使用既有 `sync_live_data_to_sample_files` 刷新读模型，速度较旧版已改善，但尚未接入真正的增量读模型存储。
+- `is_locked` 目前仍是样本层状态语义；多用户并发场景仍建议尽快迁移到共享存储/数据库。
+
+下一步:
+- 将局部刷新策略继续细化到时间区段级别（有顺延时仅刷新受影响窗口），并补充前端乐观更新与失败回滚。
+- 逐步把 Streamlit 页面的业务动作切到新 HTTP API，仅保留设置与调试能力。
+
+日期时间(HKT): 2026-03-30
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库）
+完成内容:
+- [本仓库] 独立看板 `frontend/board/index.html` 完成 UI 第一轮重构：接入真实 `Dummy1.png` 缩略图路径、九列卡片样式优化、前两列 sticky 冻结、侧边栏可收起到左侧贴边并支持一键展开。
+- [本仓库] 侧边栏功能对齐 Streamlit 设计：新增 Google Trends 区块（开始时间/搜索量排序）与 `↻ RSS` 刷新按钮，展示数据源与刷新时间；新增设置区并提供保存动作。
+- [本仓库] FastAPI 新增侧边栏数据接口：`GET /api/sidebar/trends`、`POST /api/sidebar/trends/refresh`、`GET/PUT /api/sidebar/settings`，并挂载 `/assets` 静态目录以提供 `@data/samples/Dummy1.png`。
+
+验证结果:
+- 本地接口验证通过：`/api/sidebar/trends`、`/api/sidebar/settings`、`/assets/Dummy1.png` 均可访问并返回预期结果。
+- `python -m py_compile src/dashboard_api/server.py` 通过。
+- `read_lints` 检查 `src/dashboard_api/server.py` 与 `frontend/board/index.html` 无新增问题。
+
+风险/阻塞:
+- 侧边栏设置目前写入 `dashboard_settings_state.json` 的 `default` 会话，尚未接入未来登录体系的用户级隔离。
+- 趋势列表目前只显示前 6 条，后续如需完整体验可补分页或滚动容器。
+
+下一步:
+- 把设置项（窗口分钟、分类归一化、fallback、fan page）真正连到看板动作请求与读取逻辑，完成“设置即生效”闭环。
+- 继续做动作级最小刷新与乐观更新，减少 Live 模式下操作等待感。
+
+日期时间(HKT): 2026-03-30
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库）
+完成内容:
+- [本仓库] 独立看板新增三类业务弹窗：`排程`、`修改`、`返回已出未排`，替换原先 `prompt` 粗糙输入；弹窗改为“小时/分钟 + 年/月/日”选择，与 Streamlit 版交互形态对齐。
+- [本仓库] 弹窗中的时间输入统一接入“窗口分钟粒度”约束，并在前端按当前时间过滤过去时间槽；更新弹窗同步支持 `link/text/photo/video` 类型、贴文内容与媒体 URL 字段编辑。
+- [本仓库] 后端补齐时间窗口规则：`publish` 支持接收前端设置的 `window_minutes`；`update` 新增 `enforce_time_validation + target_action_key + window_minutes` 校验，确保锁定窗口拒绝写入且分钟粒度受控。
+
+验证结果:
+- `python -m py_compile src/dashboard_api/server.py src/dashboard_api/services.py src/dashboard_api/schemas.py` 通过。
+- `read_lints` 检查本轮改动文件无新增问题。
+- 本地页面检查：`/board/` 已包含三类弹窗 DOM；后端动作接口可正常响应（含扩展字段）。
+
+风险/阻塞:
+- 当前前端时间过滤基于浏览器本地时区；若后续跨时区使用，需要统一到固定 HKT 显示与计算。
+- 删除/修改的确认弹窗目前聚焦 scheduled 场景，后续如重开 published 删除需补“删除贴文”分支文案与字段。
+
+下一步:
+- 将弹窗视觉（圆角、按钮位置、文案、辅助说明）进一步精调到与 Streamlit 版更一致。
+- 继续推进动作后最小刷新（列级 + 时间段级）与乐观更新回滚策略。
+
+日期时间(HKT): 2026-03-30
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库）
+完成内容:
+- [本仓库] 修复“时间窗口顺延/锁定拒绝”在 Mock 模式下未生效的问题：前端新增 `mockPublishWithRules`，实现与 Live 规则一致的目标窗口锁定拦截、同窗口未锁定贴文链式顺延、并返回影响统计。
+- [本仓库] Mock 模式的“修改排程”新增窗口校验（分钟粒度、不能过去、锁定窗口禁止改入），避免测试态与真实态规则偏差。
+- [本仓库] 保持 Live 模式规则闭环：`publish` 使用前端设置的 `window_minutes`；`update` 的窗口校验参数继续由后端统一执行。
+
+验证结果:
+- `read_lints` 检查 `frontend/board/index.html`、`src/dashboard_api/*` 无新增问题。
+- `python -m py_compile src/dashboard_api/server.py src/dashboard_api/services.py src/dashboard_api/schemas.py` 通过。
+
+风险/阻塞:
+- 目前 Mock 规则在前端内存实现，仅用于交互验证；真实并发场景仍以后端规则为准。
+
+下一步:
+- 增加“顺延影响可视化提示”弹层（列出被顺延文章和目标时段），便于用户确认排程副作用。
+
+日期时间(HKT): 2026-03-30
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库）
+完成内容:
+- [本仓库] 按用户反馈补齐“已排程修改时间”场景的完整窗口规则：Mock 修改不再仅做校验后直改，而是执行与排程一致的链式顺延流程（目标窗口锁定拒绝、未锁定冲突后推、遇锁跳过）。
+- [本仓库] 修改弹窗确认成功后增加影响反馈文案：显示顺延数量与锁定阻挡次数，便于验证规则生效。
+
+验证结果:
+- `read_lints` 检查 `frontend/board/index.html` 无新增问题。
+
+风险/阻塞:
+- Mock 顺延规则目前按前端内存状态执行，用于交互验证；最终并发一致性仍依赖后端真实规则。
+
+下一步:
+- 继续将“顺延详情（具体哪篇从何时移动到何时）”展示到 UI，提升可解释性。

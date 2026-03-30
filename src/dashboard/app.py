@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -26,8 +27,10 @@ def get_dashboard_health() -> dict[str, str]:
 
 def main() -> None:
     st.set_page_config(page_title="主頁FB排程", page_icon="🗂️", layout="wide")
-    st.title("主頁FB排程")
-    st.caption("Demo 版：单页总览（已發佈 / 已排程 / 已出未排），仅保留 Telegram 基础设置与测试消息。")
+    st.title("主頁FB排程（Streamlit 控制台）")
+    board_url = os.getenv("DASHBOARD_BOARD_URL", "http://127.0.0.1:8000/board/")
+    st.caption("当前页面保留为设置/调试控制台。高性能看板请使用独立前端。")
+    st.link_button("打开高性能看板（MVP）", board_url, use_container_width=False)
 
     init_settings_state()
 
