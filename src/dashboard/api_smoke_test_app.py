@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import base64
+import http.client
 import json
 import os
 import sys
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -20,6 +22,9 @@ if str(WORKSPACE_ROOT) not in sys.path:
 ENV_PATH = WORKSPACE_ROOT / "configs" / ".env"
 ENV_CONFIG = {k: v for k, v in dotenv_values(ENV_PATH).items() if isinstance(v, str)}
 load_dotenv(dotenv_path=ENV_PATH, override=True)
+DEBUG_LOG_PATH = WORKSPACE_ROOT / "debug-8a72c3.log"
+DEBUG_SESSION_ID = "8a72c3"
+DEBUG_RUN_ID = f"run-{int(time.time() * 1000)}"
 
 
 def _env_value(key: str, default: str = "") -> str:
@@ -115,13 +120,393 @@ def _extract_set_cookie_value(headers: dict[str, Any]) -> str:
     return value.split(";", 1)[0].strip()
 
 
+def _debug_log(hypothesis_id: str, location: str, message: str, data: dict[str, Any]) -> None:
+    entry = {
+        "sessionId": DEBUG_SESSION_ID,
+        "runId": DEBUG_RUN_ID,
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": int(time.time() * 1000),
+    }
+    try:
+        with DEBUG_LOG_PATH.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        # Debug logging must never break user request flow.
+        pass
+
+
+def _header_shape(headers: dict[str, str]) -> dict[str, Any]:
+    auth_value = headers.get("Authorization", "")
+    token_header = headers.get("Token", "")
+    token_shape = ""
+    if token_header:
+        token_shape = "bearer_prefixed" if token_header.startswith("Bearer ") else "raw_token"
+    return {
+        "has_authorization": "Authorization" in headers,
+        "authorization_prefix": auth_value.split(" ", 1)[0] if auth_value else "",
+        "has_proxy_authorization": "Proxy-Authorization" in headers,
+        "has_token_header": "Token" in headers,
+        "token_shape": token_shape,
+        "has_cookie_header": "Cookie" in headers,
+        "has_cookies_header": "Cookies" in headers,
+        "content_type": headers.get("Content-Type", ""),
+    }
+
+
+def _probe_request_shapes_on_401(
+    url: str,
+    posts_body: dict[str, Any],
+    headers: dict[str, str],
+    gateway_basic_auth: str | None,
+) -> None:
+    posts_min = {k: v for k, v in posts_body.items() if v is not None}
+    posts_with_search = dict(posts_min)
+    posts_with_search["search"] = ""
+    bearer_auth = str(headers.get("Authorization", ""))
+    token_header = str(headers.get("Token", "")).strip()
+    bearer_token = ""
+    if bearer_auth.startswith("Bearer "):
+        bearer_token = bearer_auth.replace("Bearer ", "", 1).strip()
+    elif token_header:
+        bearer_token = token_header.replace("Bearer ", "", 1).strip()
+    cookie_value = str(headers.get("Cookie", "")).strip()
+
+    if gateway_basic_auth and bearer_token:
+        gateway_variants: list[tuple[str, dict[str, Any], str]] = [
+            ("posts_json_basic_token_cookies", posts_with_search, "H23"),
+            ("fb_published_json_basic_token_cookies", {"action": "fb_published", "limit": 1}, "H23"),
+            ("posts_json_basic_token_bearer_cookies", posts_with_search, "H23"),
+        ]
+        for name, payload, hypothesis_id in gateway_variants:
+            status_code = 0
+            reason = ""
+            body_preview = ""
+            req_headers = {
+                "Content-Type": "application/json",
+                "Authorization": gateway_basic_auth,
+                "Cookies": cookie_value,
+            }
+            if name.endswith("token_bearer_cookies"):
+                req_headers["Token"] = f"Bearer {bearer_token}"
+            else:
+                req_headers["Token"] = bearer_token
+            try:
+                req_body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+                req = request.Request(url, data=req_body, headers=req_headers, method="POST")
+                with request.urlopen(req, timeout=20) as resp:
+                    status_code = int(resp.getcode())
+                    body_preview = resp.read().decode("utf-8", errors="replace")[:160]
+            except error.HTTPError as exc:
+                status_code = int(exc.code)
+                reason = str(exc.reason)
+                body_preview = exc.read().decode("utf-8", errors="replace")[:160]
+            except Exception as exc:  # noqa: BLE001 - probe only
+                reason = type(exc).__name__
+            # region agent log
+            _debug_log(
+                hypothesis_id=hypothesis_id,
+                location="api_smoke_test_app.py:_probe_request_shapes_on_401",
+                message="401 diagnostic gateway-header result",
+                data={
+                    "variant": name,
+                    "status_code": status_code,
+                    "reason": reason,
+                    "header_shape": _header_shape(req_headers),
+                    "payload_keys": sorted(payload.keys()),
+                    "body_preview": body_preview,
+                },
+            )
+            # endregion
+
+        parsed = parse.urlsplit(url)
+        host_root = parse.urlunsplit((parsed.scheme, parsed.netloc, "", "", ""))
+        login_url = f"{host_root}/fb-scheduler/index.php"
+        login_resp = post_json_with_headers(
+            login_url,
+            {"action": "login", "username": _env_value("USERNAME"), "password": _env_value("PASSWORD")},
+            headers={
+                "Content-Type": "application/json; charset=utf-8",
+                "Authorization": gateway_basic_auth,
+            },
+            gateway_basic_auth=gateway_basic_auth,
+        )
+        fresh_token = _extract_token(login_resp.get("response_json")) or ""
+        fresh_cookie = _extract_set_cookie_value(
+            login_resp.get("response_headers", {})
+            if isinstance(login_resp.get("response_headers", {}), dict)
+            else {}
+        )
+        # region agent log
+        _debug_log(
+            hypothesis_id="H24",
+            location="api_smoke_test_app.py:_probe_request_shapes_on_401",
+            message="Fresh login for gateway-header probe",
+            data={
+                "login_status_code": int(login_resp.get("status_code", 0))
+                if isinstance(login_resp.get("status_code"), int)
+                else 0,
+                "token_present": bool(fresh_token),
+                "token_length": len(fresh_token),
+                "cookie_present": bool(fresh_cookie),
+            },
+        )
+        # endregion
+        if fresh_token:
+            for name, payload in [
+                ("posts_json_basic_token_cookies_fresh", posts_with_search),
+                ("fb_published_json_basic_token_cookies_fresh", {"action": "fb_published", "limit": 1}),
+            ]:
+                status_code = 0
+                reason = ""
+                body_preview = ""
+                req_headers = {
+                    "Content-Type": "application/json",
+                    "Authorization": gateway_basic_auth,
+                    "Token": fresh_token,
+                    "Cookies": fresh_cookie,
+                }
+                try:
+                    req_body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+                    req = request.Request(url, data=req_body, headers=req_headers, method="POST")
+                    with request.urlopen(req, timeout=20) as resp:
+                        status_code = int(resp.getcode())
+                        body_preview = resp.read().decode("utf-8", errors="replace")[:160]
+                except error.HTTPError as exc:
+                    status_code = int(exc.code)
+                    reason = str(exc.reason)
+                    body_preview = exc.read().decode("utf-8", errors="replace")[:160]
+                except Exception as exc:  # noqa: BLE001 - probe only
+                    reason = type(exc).__name__
+                # region agent log
+                _debug_log(
+                    hypothesis_id="H24",
+                    location="api_smoke_test_app.py:_probe_request_shapes_on_401",
+                    message="Fresh token gateway-header result",
+                    data={
+                        "variant": name,
+                        "status_code": status_code,
+                        "reason": reason,
+                        "header_shape": _header_shape(req_headers),
+                        "payload_keys": sorted(payload.keys()),
+                        "body_preview": body_preview,
+                    },
+                )
+                # endregion
+
+            parsed_host = parse.urlsplit(url)
+            host = parsed_host.hostname or ""
+            port = parsed_host.port
+            if host:
+                for variant_name, path, payload in [
+                    ("posts_httpclient_double_slash", "//fb-scheduler/", posts_with_search),
+                    ("posts_httpclient_single_slash", "/fb-scheduler/", posts_with_search),
+                    ("fb_published_httpclient_double_slash", "//fb-scheduler/", {"action": "fb_published", "limit": 1}),
+                    ("fb_published_httpclient_single_slash", "/fb-scheduler/", {"action": "fb_published", "limit": 1}),
+                ]:
+                    status_code = 0
+                    reason = ""
+                    body_preview = ""
+                    req_headers = {
+                        "Content-Type": "application/json",
+                        "Authorization": gateway_basic_auth,
+                        "Token": fresh_token,
+                        "Cookies": fresh_cookie,
+                    }
+                    try:
+                        if port:
+                            conn = http.client.HTTPSConnection(host, port, timeout=20)
+                        else:
+                            conn = http.client.HTTPSConnection(host, timeout=20)
+                        conn.request("POST", path, json.dumps(payload), req_headers)
+                        resp = conn.getresponse()
+                        status_code = int(resp.status)
+                        reason = str(resp.reason)
+                        body_preview = resp.read().decode("utf-8", errors="replace")[:160]
+                        conn.close()
+                    except Exception as exc:  # noqa: BLE001 - probe only
+                        reason = type(exc).__name__
+                    # region agent log
+                    _debug_log(
+                        hypothesis_id="H30",
+                        location="api_smoke_test_app.py:_probe_request_shapes_on_401",
+                        message="Fresh token http.client slash variant",
+                        data={
+                            "variant": variant_name,
+                            "path": path,
+                            "status_code": status_code,
+                            "reason": reason,
+                            "header_shape": _header_shape(req_headers),
+                            "body_preview": body_preview,
+                        },
+                    )
+                    # endregion
+
+                # Colleague-style Bearer-only probe (no cookie).
+                colleague_status = 0
+                colleague_reason = ""
+                colleague_body_preview = ""
+                colleague_headers = {
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {fresh_token}",
+                }
+                colleague_payload = {
+                    "action": "posts",
+                    "category": "心韓",
+                    "search": "",
+                    "limit": 10,
+                }
+                try:
+                    if port:
+                        conn = http.client.HTTPSConnection(host, port, timeout=20)
+                    else:
+                        conn = http.client.HTTPSConnection(host, timeout=20)
+                    conn.request("POST", "//fb-scheduler/", json.dumps(colleague_payload), colleague_headers)
+                    colleague_resp = conn.getresponse()
+                    colleague_status = int(colleague_resp.status)
+                    colleague_reason = str(colleague_resp.reason)
+                    colleague_body_preview = colleague_resp.read().decode("utf-8", errors="replace")[:160]
+                    conn.close()
+                except Exception as exc:  # noqa: BLE001 - probe only
+                    colleague_reason = type(exc).__name__
+                # region agent log
+                _debug_log(
+                    hypothesis_id="H31",
+                    location="api_smoke_test_app.py:_probe_request_shapes_on_401",
+                    message="Colleague-style bearer probe result",
+                    data={
+                        "path": "//fb-scheduler/",
+                        "status_code": colleague_status,
+                        "reason": colleague_reason,
+                        "header_shape": _header_shape(colleague_headers),
+                        "body_preview": colleague_body_preview,
+                    },
+                )
+                # endregion
+
+            # Additional posts-only probes for path/body/header quirks.
+            extra_posts_variants: list[tuple[str, str, str, dict[str, Any], dict[str, str]]] = [
+                (
+                    "posts_json_basic_token_cookies_fresh_indexphp",
+                    "H26",
+                    f"{host_root}/fb-scheduler/index.php",
+                    posts_with_search,
+                    {
+                        "Content-Type": "application/json",
+                        "Authorization": gateway_basic_auth,
+                        "Token": fresh_token,
+                        "Cookies": fresh_cookie,
+                    },
+                ),
+                (
+                    "posts_form_basic_token_cookies_fresh",
+                    "H27",
+                    url,
+                    posts_with_search,
+                    {
+                        "Content-Type": "application/x-www-form-urlencoded",
+                        "Authorization": gateway_basic_auth,
+                        "Token": fresh_token,
+                        "Cookies": fresh_cookie,
+                    },
+                ),
+                (
+                    "posts_json_basic_token_cookie_singular_fresh",
+                    "H28",
+                    url,
+                    posts_with_search,
+                    {
+                        "Content-Type": "application/json",
+                        "Authorization": gateway_basic_auth,
+                        "Token": fresh_token,
+                        "Cookie": fresh_cookie,
+                    },
+                ),
+            ]
+
+            for variant_name, hypothesis_id, variant_url, variant_payload, variant_headers in extra_posts_variants:
+                status_code = 0
+                reason = ""
+                body_preview = ""
+                try:
+                    if variant_headers.get("Content-Type") == "application/x-www-form-urlencoded":
+                        variant_body = parse.urlencode(variant_payload).encode("utf-8")
+                    else:
+                        variant_body = json.dumps(variant_payload, ensure_ascii=False).encode("utf-8")
+                    req = request.Request(variant_url, data=variant_body, headers=variant_headers, method="POST")
+                    with request.urlopen(req, timeout=20) as resp:
+                        status_code = int(resp.getcode())
+                        body_preview = resp.read().decode("utf-8", errors="replace")[:160]
+                except error.HTTPError as exc:
+                    status_code = int(exc.code)
+                    reason = str(exc.reason)
+                    body_preview = exc.read().decode("utf-8", errors="replace")[:160]
+                except Exception as exc:  # noqa: BLE001 - probe only
+                    reason = type(exc).__name__
+                # region agent log
+                _debug_log(
+                    hypothesis_id=hypothesis_id,
+                    location="api_smoke_test_app.py:_probe_request_shapes_on_401",
+                    message="Fresh token posts edge variant",
+                    data={
+                        "variant": variant_name,
+                        "url": variant_url,
+                        "status_code": status_code,
+                        "reason": reason,
+                        "header_shape": _header_shape(variant_headers),
+                        "body_preview": body_preview,
+                    },
+                )
+                # endregion
+
+            for cat in ["心韓", "娛樂", "社會事"]:
+                status_code = 0
+                reason = ""
+                body_preview = ""
+                payload = {"action": "posts", "category": cat, "limit": 10, "search": ""}
+                req_headers = {
+                    "Content-Type": "application/json",
+                    "Authorization": gateway_basic_auth,
+                    "Token": fresh_token,
+                    "Cookies": fresh_cookie,
+                }
+                try:
+                    req_body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+                    req = request.Request(url, data=req_body, headers=req_headers, method="POST")
+                    with request.urlopen(req, timeout=20) as resp:
+                        status_code = int(resp.getcode())
+                        body_preview = resp.read().decode("utf-8", errors="replace")[:160]
+                except error.HTTPError as exc:
+                    status_code = int(exc.code)
+                    reason = str(exc.reason)
+                    body_preview = exc.read().decode("utf-8", errors="replace")[:160]
+                except Exception as exc:  # noqa: BLE001 - probe only
+                    reason = type(exc).__name__
+                # region agent log
+                _debug_log(
+                    hypothesis_id="H25",
+                    location="api_smoke_test_app.py:_probe_request_shapes_on_401",
+                    message="Fresh token posts category variant",
+                    data={
+                        "category": cat,
+                        "status_code": status_code,
+                        "reason": reason,
+                        "header_shape": _header_shape(req_headers),
+                        "body_preview": body_preview,
+                    },
+                )
+                # endregion
+
+
 def post_form(
     url: str,
     payload: dict[str, Any],
     token: str | None = None,
     cookies: str = "",
     gateway_basic_auth: str | None = None,
-    prefer_bearer: bool = False,
+    auth_combo: str = "bearer_only",
     include_content_type: bool = True,
     extra_headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
@@ -133,18 +518,17 @@ def post_form(
         headers["Content-Type"] = "application/x-www-form-urlencoded"
     if extra_headers:
         headers.update(extra_headers)
-    if prefer_bearer and token:
-        headers["Authorization"] = f"Bearer {token}"
-        if gateway_basic_auth:
-            headers["Proxy-Authorization"] = gateway_basic_auth
-    elif gateway_basic_auth:
+    if auth_combo in {"basic_token", "basic_token_bearer"} and gateway_basic_auth:
         headers["Authorization"] = gateway_basic_auth
         if token:
-            headers["Token"] = token
+            headers["Token"] = f"Bearer {token}" if auth_combo == "basic_token_bearer" else token
     elif token:
         headers["Authorization"] = f"Bearer {token}"
+        if auth_combo == "proxy_bearer" and gateway_basic_auth:
+            headers["Proxy-Authorization"] = gateway_basic_auth
     if cookies:
-        headers["Cookie"] = cookies
+        cookie_header_name = "Cookies" if auth_combo in {"basic_token", "basic_token_bearer"} else "Cookie"
+        headers[cookie_header_name] = cookies
     req = request.Request(url, data=encoded, headers=headers, method="POST")
     request_payload = {
         "method": "POST",
@@ -162,24 +546,48 @@ def post_json(
     token: str | None = None,
     cookies: str = "",
     gateway_basic_auth: str | None = None,
-    prefer_bearer: bool = False,
+    auth_combo: str = "bearer_only",
 ) -> dict[str, Any]:
     body_payload = {k: v for k, v in payload.items() if v is not None}
     encoded_text = json.dumps(body_payload, ensure_ascii=False)
     encoded = encoded_text.encode("utf-8")
-    headers = {"Content-Type": "application/json"}
-    if prefer_bearer and token:
-        headers["Authorization"] = f"Bearer {token}"
-        if gateway_basic_auth:
-            headers["Proxy-Authorization"] = gateway_basic_auth
-    elif gateway_basic_auth:
+    headers = {"Content-Type": "application/json; charset=utf-8"}
+    if auth_combo in {"basic_token", "basic_token_bearer"} and gateway_basic_auth:
         headers["Authorization"] = gateway_basic_auth
         if token:
-            headers["Token"] = token
+            headers["Token"] = f"Bearer {token}" if auth_combo == "basic_token_bearer" else token
     elif token:
         headers["Authorization"] = f"Bearer {token}"
+        if auth_combo == "proxy_bearer" and gateway_basic_auth:
+            headers["Proxy-Authorization"] = gateway_basic_auth
     if cookies:
-        headers["Cookie"] = cookies
+        cookie_header_name = "Cookies" if auth_combo in {"basic_token", "basic_token_bearer"} else "Cookie"
+        headers[cookie_header_name] = cookies
+    body_shape = {
+        "keys": sorted(body_payload.keys()),
+        "has_action": "action" in body_payload,
+        "has_category": "category" in body_payload,
+        "has_search": "search" in body_payload,
+        "search_is_empty_string": body_payload.get("search") == "",
+        "has_limit": "limit" in body_payload,
+        "limit_value": body_payload.get("limit") if "limit" in body_payload else None,
+        "has_page": "page" in body_payload,
+    }
+    # region agent log
+    _debug_log(
+        hypothesis_id="H1-H2-H4-H9",
+        location="api_smoke_test_app.py:post_json",
+        message="Prepared post_json request headers",
+        data={
+            "action": str(body_payload.get("action", "")),
+            "auth_combo": auth_combo,
+            "has_token_argument": bool(token),
+            "has_cookies_argument": bool(cookies),
+            "header_shape": _header_shape(headers),
+            "body_shape": body_shape,
+        },
+    )
+    # endregion
     req = request.Request(url, data=encoded, headers=headers, method="POST")
     request_payload = {
         "method": "POST",
@@ -198,25 +606,26 @@ def post_json_with_headers(
     token: str | None = None,
     cookies: str = "",
     gateway_basic_auth: str | None = None,
-    prefer_bearer: bool = False,
+    auth_combo: str = "bearer_only",
 ) -> dict[str, Any]:
     body_payload = {k: v for k, v in payload.items() if v is not None}
     encoded_text = json.dumps(body_payload, ensure_ascii=False)
     encoded = encoded_text.encode("utf-8")
     merged_headers = dict(headers)
-    merged_headers.setdefault("Content-Type", "application/json")
-    if prefer_bearer and token:
-        merged_headers["Authorization"] = f"Bearer {token}"
-        if gateway_basic_auth:
-            merged_headers["Proxy-Authorization"] = gateway_basic_auth
-    elif gateway_basic_auth:
+    merged_headers.setdefault("Content-Type", "application/json; charset=utf-8")
+    if auth_combo in {"basic_token", "basic_token_bearer"} and gateway_basic_auth:
         merged_headers["Authorization"] = gateway_basic_auth
         if token:
-            merged_headers["Token"] = token
+            merged_headers["Token"] = f"Bearer {token}" if auth_combo == "basic_token_bearer" else token
     elif token:
         merged_headers["Authorization"] = f"Bearer {token}"
+        if auth_combo == "proxy_bearer" and gateway_basic_auth:
+            merged_headers["Proxy-Authorization"] = gateway_basic_auth
     if cookies:
-        merged_headers["Cookie"] = cookies
+        cookie_header_name = (
+            "Cookies" if auth_combo in {"basic_token", "basic_token_bearer"} else "Cookie"
+        )
+        merged_headers[cookie_header_name] = cookies
     req = request.Request(url, data=encoded, headers=merged_headers, method="POST")
     request_payload = {
         "method": "POST",
@@ -232,6 +641,25 @@ def _do_request(req: request.Request, request_payload: dict[str, Any]) -> dict[s
     try:
         with request.urlopen(req, timeout=30) as resp:
             raw_text = resp.read().decode("utf-8", errors="replace")
+            # region agent log
+            _debug_log(
+                hypothesis_id="H1-H2-H3-H4",
+                location="api_smoke_test_app.py:_do_request",
+                message="HTTP success response",
+                data={
+                    "status_code": resp.getcode(),
+                    "action": str((request_payload.get("body_json") or {}).get("action", "")),
+                    "url": str(request_payload.get("url", "")),
+                    "request_header_shape": _header_shape(
+                        request_payload.get("headers", {})
+                        if isinstance(request_payload.get("headers", {}), dict)
+                        else {}
+                    ),
+                    "response_has_set_cookie": bool(resp.headers.get("Set-Cookie")),
+                    "response_content_type": str(resp.headers.get("Content-Type", "")),
+                },
+            )
+            # endregion
             return {
                 "ok": True,
                 "status_code": resp.getcode(),
@@ -241,6 +669,43 @@ def _do_request(req: request.Request, request_payload: dict[str, Any]) -> dict[s
             }
     except error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
+        parsed_error_body = _safe_json_decode(body)
+        # region agent log
+        _debug_log(
+            hypothesis_id="H1-H2-H3-H4-H5",
+            location="api_smoke_test_app.py:_do_request",
+            message="HTTP error response",
+            data={
+                "status_code": exc.code,
+                "reason": str(exc.reason),
+                "action": str((request_payload.get("body_json") or {}).get("action", "")),
+                "url": str(request_payload.get("url", "")),
+                "request_header_shape": _header_shape(
+                    request_payload.get("headers", {})
+                    if isinstance(request_payload.get("headers", {}), dict)
+                    else {}
+                ),
+                "response_has_set_cookie": bool(exc.headers.get("Set-Cookie")),
+                    "response_json_top_keys": sorted(list(parsed_error_body.keys()))
+                    if isinstance(parsed_error_body, dict)
+                    else [],
+                    "response_json_error_message": str(
+                        (
+                            (parsed_error_body.get("message"))
+                            if isinstance(parsed_error_body, dict)
+                            else ""
+                        )
+                        or (
+                            (parsed_error_body.get("error"))
+                            if isinstance(parsed_error_body, dict)
+                            else ""
+                        )
+                        or ""
+                    )[:200],
+                    "response_body_preview": body[:200],
+            },
+        )
+        # endregion
         return {
             "ok": False,
             "status_code": exc.code,
@@ -291,6 +756,35 @@ def ensure_login(
             gateway_basic_auth=login_gateway_auth,
         )
     token = _extract_token(login_resp.get("response_json"))
+    # region agent log
+    _debug_log(
+        hypothesis_id="H3-H4-H5",
+        location="api_smoke_test_app.py:ensure_login",
+        message="Login completed and token extracted",
+        data={
+            "use_gateway_mode": use_gateway_mode,
+            "as_json": as_json,
+            "login_status_code": int(login_resp.get("status_code", 0))
+            if isinstance(login_resp.get("status_code"), int)
+            else 0,
+            "login_ok": bool(login_resp.get("ok")),
+            "token_extracted": bool(token),
+            "token_length": len(token or ""),
+            "request_header_shape": _header_shape(
+                login_resp.get("request", {}).get("headers", {})
+                if isinstance(login_resp.get("request", {}), dict)
+                else {}
+            ),
+            "response_has_set_cookie": bool(
+                (
+                    login_resp.get("response_headers", {})
+                    if isinstance(login_resp.get("response_headers", {}), dict)
+                    else {}
+                ).get("Set-Cookie")
+            ),
+        },
+    )
+    # endregion
     return token, login_resp
 
 
@@ -314,6 +808,14 @@ def show_result(title: str, result: dict[str, Any]) -> None:
 
 
 def main() -> None:
+    # region agent log
+    _debug_log(
+        hypothesis_id="H0",
+        location="api_smoke_test_app.py:main",
+        message="App main entered",
+        data={"workspace_root": str(WORKSPACE_ROOT)},
+    )
+    # endregion
     st.set_page_config(page_title="FB Scheduler API Smoke Test", page_icon="🧪", layout="wide")
     st.title("FB Scheduler API Smoke Test")
     st.caption("最小冒煙測試頁：逐一按按鈕即可測試對應 API，並顯示 JSON 回傳。")
@@ -367,6 +869,7 @@ def main() -> None:
     if normalized_base != api_base.strip().rstrip("/") or normalized_endpoint != endpoint_path.strip():
         st.info(f"已自動修正請求目標：base={normalized_base}  endpoint={normalized_endpoint}")
     st.code(full_url, language="text")
+
     if gateway_basic_auth:
         st.caption("已启用网关 Basic Auth（从 .env 读取）。")
     else:
@@ -393,13 +896,26 @@ def main() -> None:
     )
     use_login_gateway_mode = login_auth_mode == "網關模式(Basic)"
     api_auth_mode = st.radio(
-        "後續 API 鑑權模式",
-        options=["文檔模式(Bearer)", "網關模式(Basic+Token)"],
-        index=0,
+        "後續 API Header 組合",
+        options=[
+            "Bearer only",
+            "Proxy-Authorization + Bearer",
+            "Basic + Token",
+            "Basic + Token(Bearer)",
+        ],
+        index=2,
         horizontal=True,
-        help="网关模式更易通过 ELB；文档模式严格按 Authorization: Bearer <TOKEN>。",
+        help="用于快速 A/B 不同网关环境：Bearer only / Proxy+Bearer / Basic+Token / Basic+Token(Bearer)。",
     )
-    use_doc_bearer = api_auth_mode == "文檔模式(Bearer)"
+    auth_combo = "bearer_only"
+    if api_auth_mode == "Proxy-Authorization + Bearer":
+        auth_combo = "proxy_bearer"
+    elif api_auth_mode == "Basic + Token":
+        auth_combo = "basic_token"
+    elif api_auth_mode == "Basic + Token(Bearer)":
+        auth_combo = "basic_token_bearer"
+    if auth_combo in {"proxy_bearer", "basic_token", "basic_token_bearer"} and not gateway_basic_auth:
+        st.warning("当前未检测到网关 Basic 凭证，所选组合可能缺少必要请求头。")
 
     if st.button("Login 取得 Token", use_container_width=True):
         token, login_result = ensure_login(
@@ -463,9 +979,16 @@ def main() -> None:
             token=st.session_state.api_token,
             cookies=st.session_state.api_cookies,
             gateway_basic_auth=gateway_basic_auth,
-            prefer_bearer=use_doc_bearer,
+            auth_combo=auth_combo,
         )
         show_result("posts", result)
+        if not result.get("ok") and int(result.get("status_code", 0) or 0) == 401:
+            req_headers = {}
+            if isinstance(result.get("request", {}), dict):
+                headers_obj = result.get("request", {}).get("headers", {})
+                if isinstance(headers_obj, dict):
+                    req_headers = {str(k): str(v) for k, v in headers_obj.items()}
+            _probe_request_shapes_on_401(full_url, payload, req_headers, gateway_basic_auth)
 
     st.divider()
     st.subheader("Get Facebook Page Published Posts (action=fb_published)")
@@ -502,7 +1025,7 @@ def main() -> None:
             token=st.session_state.api_token,
             cookies=st.session_state.api_cookies,
             gateway_basic_auth=gateway_basic_auth,
-            prefer_bearer=use_doc_bearer,
+            auth_combo=auth_combo,
         )
         show_result("fb_published", result)
 
@@ -544,7 +1067,7 @@ def main() -> None:
             token=st.session_state.api_token,
             cookies=st.session_state.api_cookies,
             gateway_basic_auth=gateway_basic_auth,
-            prefer_bearer=use_doc_bearer,
+            auth_combo=auth_combo,
         )
         show_result("fb_scheduled", result)
 
@@ -595,7 +1118,7 @@ def main() -> None:
             token=st.session_state.api_token,
             cookies=st.session_state.api_cookies,
             gateway_basic_auth=gateway_basic_auth,
-            prefer_bearer=use_doc_bearer,
+            auth_combo=auth_combo,
         )
         show_result("fb_publish", result)
 
@@ -640,7 +1163,7 @@ def main() -> None:
             token=st.session_state.api_token,
             cookies=st.session_state.api_cookies,
             gateway_basic_auth=gateway_basic_auth,
-            prefer_bearer=use_doc_bearer,
+            auth_combo=auth_combo,
         )
         show_result("fb_update", result)
 
@@ -679,7 +1202,7 @@ def main() -> None:
             token=st.session_state.api_token,
             cookies=st.session_state.api_cookies,
             gateway_basic_auth=gateway_basic_auth,
-            prefer_bearer=use_doc_bearer,
+            auth_combo=auth_combo,
         )
         show_result("fb_delete", result)
 

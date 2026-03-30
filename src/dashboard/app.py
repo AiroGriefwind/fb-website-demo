@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 # Ensure imports like `from src...` work when launched via `streamlit run src/dashboard/app.py`.
 WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
@@ -35,8 +36,52 @@ def main() -> None:
         for x in ("schedule_pick", "update_pick", "delete_pick", "unschedule_pick", "lock_toggle")
     )
     has_pending_action = bool(st.session_state.get("pending_fb_action"))
+    has_busy_action = bool(st.session_state.get("fb_action_busy", False))
+
+    st.markdown(
+        """
+        <style>
+        .st-key-pending_action_kick_app_commit {
+            position: absolute !important;
+            left: -10000px !important;
+            top: auto !important;
+            width: 1px !important;
+            height: 1px !important;
+            overflow: hidden !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.button("pending_action_kick_app_commit", key="pending_action_kick_app_commit")
+
+    if bool(st.session_state.pop("_pending_action_needs_kick", False)):
+        st.caption("正在准备执行操作...")
+        components.html(
+            """
+            <script>
+            (function () {
+              window.setTimeout(function () {
+                try {
+                  const doc = window.parent.document;
+                  const btn = doc.querySelector('.st-key-pending_action_kick_app_commit button');
+                  if (btn) btn.click();
+                } catch (e) {
+                  // no-op
+                }
+              }, 80);
+            })();
+            </script>
+            """,
+            height=0,
+            scrolling=False,
+        )
+        return
+
     if has_ui_only_query and not has_pending_action:
         st.caption("正在打开操作弹窗，暂不触发 API 同步。")
+    elif has_pending_action or has_busy_action:
+        st.caption("正在执行 FB 动作，暂不触发全量 API 同步。")
     else:
         sync_result = sync_live_data_to_sample_files(
             enable_category_alias_mode=bool(st.session_state.get("cfg_enable_category_alias_mode", False)),

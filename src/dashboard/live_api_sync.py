@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,10 @@ from src.dashboard.config import CATEGORY_ORDER, HKT_TZ, PENDING_FILE, PUBLISHED
 
 ENV_PATH = Path(__file__).resolve().parents[2] / "configs" / ".env"
 ENV_VALUES = {k: v for k, v in dotenv_values(ENV_PATH).items() if isinstance(v, str)}
+WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
+DEBUG_LOG_PATH = WORKSPACE_ROOT / "debug-8a72c3.log"
+DEBUG_SESSION_ID = "8a72c3"
+DEBUG_RUN_ID = f"run-{int(time.time() * 1000)}"
 CATEGORY_ALIASES = {
     "娛圈事": "娛樂",
     "娱乐": "娛樂",
@@ -34,6 +39,34 @@ CATEGORY_ALIASES = {
     "心 韓": "心韓",
     "心韓": "心韓",
 }
+
+
+def _debug_log(hypothesis_id: str, location: str, message: str, data: dict[str, Any]) -> None:
+    entry = {
+        "sessionId": DEBUG_SESSION_ID,
+        "runId": DEBUG_RUN_ID,
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": int(time.time() * 1000),
+    }
+    try:
+        with DEBUG_LOG_PATH.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+def _header_shape(headers: dict[str, str]) -> dict[str, Any]:
+    auth_value = headers.get("Authorization", "")
+    return {
+        "has_authorization": "Authorization" in headers,
+        "authorization_prefix": auth_value.split(" ", 1)[0] if auth_value else "",
+        "has_cookie": "Cookie" in headers,
+        "has_cookies": "Cookies" in headers,
+        "content_type": headers.get("Content-Type", ""),
+    }
 
 
 def _secret_or_env(key: str, default: str = "") -> str:
@@ -83,6 +116,18 @@ def _normalize_endpoint_url(raw_base_url: str) -> str:
 
 def _json_post(url: str, payload: dict[str, Any], headers: dict[str, str]) -> tuple[int, dict[str, str], Any]:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    # region agent log
+    _debug_log(
+        hypothesis_id="H6-H7",
+        location="live_api_sync.py:_json_post",
+        message="Sending JSON request",
+        data={
+            "url": url,
+            "action": str(payload.get("action", "")),
+            "header_shape": _header_shape(headers),
+        },
+    )
+    # endregion
     req = request.Request(url, data=body, headers=headers, method="POST")
     with request.urlopen(req, timeout=20) as resp:
         text = resp.read().decode("utf-8", errors="replace")
@@ -90,6 +135,18 @@ def _json_post(url: str, payload: dict[str, Any], headers: dict[str, str]) -> tu
             data = json.loads(text)
         except json.JSONDecodeError:
             data = {"raw_text": text}
+        # region agent log
+        _debug_log(
+            hypothesis_id="H6-H7-H8",
+            location="live_api_sync.py:_json_post",
+            message="Received JSON response",
+            data={
+                "status_code": resp.getcode(),
+                "action": str(payload.get("action", "")),
+                "response_has_set_cookie": bool(resp.headers.get("Set-Cookie")),
+            },
+        )
+        # endregion
         return resp.getcode(), dict(resp.headers), data
 
 
@@ -173,9 +230,12 @@ def _normalize_post_type(raw: str) -> str:
     return "link"
 
 
-def _build_cms_reference_maps(posts_items: list[dict[str, Any]]) -> tuple[dict[str, int], dict[str, int]]:
+def _build_cms_reference_maps(
+    posts_items: list[dict[str, Any]],
+) -> tuple[dict[str, int], dict[str, int], dict[int, str]]:
     by_post_link_id: dict[str, int] = {}
     by_post_link: dict[str, int] = {}
+    thumb_by_cms_id: dict[int, str] = {}
     for item in posts_items:
         cms_id = _safe_int(item.get("ID"))
         if cms_id <= 0:
@@ -183,6 +243,11 @@ def _build_cms_reference_maps(posts_items: list[dict[str, Any]]) -> tuple[dict[s
         post_link = str(item.get("post_link", "")).strip()
         if post_link:
             by_post_link[post_link] = cms_id
+        cms_thumb = (
+            str(item.get("feature_image", "")).strip()
+            or str(item.get("image_url", "")).strip()
+            or str(item.get("post_thumbnail", "")).strip()
+        )
         fan_pages = item.get("fan_pages", [])
         if isinstance(fan_pages, list):
             for row in fan_pages:
@@ -191,7 +256,15 @@ def _build_cms_reference_maps(posts_items: list[dict[str, Any]]) -> tuple[dict[s
                 link_id = str(row.get("post_link_id", "")).strip()
                 if link_id:
                     by_post_link_id[link_id] = cms_id
-    return by_post_link_id, by_post_link
+                if not cms_thumb:
+                    cms_thumb = (
+                        str(row.get("image_url", "")).strip()
+                        or str(row.get("thumbnail", "")).strip()
+                        or str(row.get("feature_image", "")).strip()
+                    )
+        if cms_thumb:
+            thumb_by_cms_id[cms_id] = cms_thumb
+    return by_post_link_id, by_post_link, thumb_by_cms_id
 
 
 def _extract_fan_page_entry(item: dict[str, Any], target_fan_page_id: str) -> dict[str, Any]:
@@ -225,6 +298,22 @@ def _build_scheduled_thumb_map(rows: list[dict[str, Any]]) -> dict[str, str]:
         if key and thumb:
             mapping[key] = thumb
     return mapping
+
+
+def _build_pending_thumb_maps(rows: list[dict[str, Any]]) -> tuple[dict[int, str], dict[str, str]]:
+    by_post_id: dict[int, str] = {}
+    by_title: dict[str, str] = {}
+    for row in rows:
+        thumb = str(row.get("thumbnail", "")).strip() or str(row.get("image_url", "")).strip()
+        if not thumb:
+            continue
+        post_id = _safe_int(row.get("post_id"))
+        if post_id > 0:
+            by_post_id[post_id] = thumb
+        title = str(row.get("title", "")).strip()
+        if title:
+            by_title[title] = thumb
+    return by_post_id, by_title
 
 
 def _to_published_rows(
@@ -274,11 +363,17 @@ def _to_scheduled_rows(
     thumb_fallback_map: dict[str, str] | None = None,
     cms_id_by_post_link_id: dict[str, int] | None = None,
     cms_id_by_post_link: dict[str, int] | None = None,
+    thumb_by_cms_id: dict[int, str] | None = None,
+    pending_thumb_by_post_id: dict[int, str] | None = None,
+    pending_thumb_by_title: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     thumb_fallback_map = thumb_fallback_map or {}
     cms_id_by_post_link_id = cms_id_by_post_link_id or {}
     cms_id_by_post_link = cms_id_by_post_link or {}
+    thumb_by_cms_id = thumb_by_cms_id or {}
+    pending_thumb_by_post_id = pending_thumb_by_post_id or {}
+    pending_thumb_by_title = pending_thumb_by_title or {}
     for item in items:
         title = str(item.get("message", "")).strip() or str(item.get("id", "Untitled")).strip() or "Untitled"
         current_link_id = _derive_post_link_id(item)
@@ -291,6 +386,12 @@ def _to_scheduled_rows(
             cms_post_id = cms_id_by_post_link.get(current_link, 0)
         if cms_post_id <= 0:
             cms_post_id = _derive_post_id(item)
+        if not current_thumb and cms_post_id > 0:
+            current_thumb = str(thumb_by_cms_id.get(cms_post_id, "")).strip()
+        if not current_thumb and cms_post_id > 0:
+            current_thumb = str(pending_thumb_by_post_id.get(cms_post_id, "")).strip()
+        if not current_thumb:
+            current_thumb = str(pending_thumb_by_title.get(title, "")).strip()
         rows.append(
             {
                 "title": title,
@@ -376,6 +477,14 @@ def _extract_data_list(payload: Any) -> list[dict[str, Any]]:
 @st.cache_data(show_spinner=False, ttl=60)
 def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, target_fan_page_id: str = "") -> dict[str, Any]:
     try:
+        # region agent log
+        _debug_log(
+            hypothesis_id="H6",
+            location="live_api_sync.py:sync_live_data_to_sample_files",
+            message="Sync function entered",
+            data={"enable_category_alias_mode": bool(enable_category_alias_mode)},
+        )
+        # endregion
         api_base = _secret_or_env("API_BASE_URL")
         username = _secret_or_env("USERNAME")
         password = _secret_or_env("PASSWORD")
@@ -403,6 +512,14 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
         )
         token = str((login_payload.get("data", {}) if isinstance(login_payload, dict) else {}).get("token", "")).strip()
         if code != 200 or not token:
+            # region agent log
+            _debug_log(
+                hypothesis_id="H7-H8",
+                location="live_api_sync.py:sync_live_data_to_sample_files",
+                message="Login failed for sync flow",
+                data={"status_code": code, "token_present": bool(token)},
+            )
+            # endregion
             return {"ok": False, "message": f"login failed ({code})", "login_payload": login_payload}
 
         session_cookie = str(login_resp_headers.get("Set-Cookie", "")).split(";", 1)[0].strip()
@@ -440,7 +557,7 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
                     seen_pending.add(item_id)
                     pending_rows_all.append(row)
 
-        cms_id_by_post_link_id, cms_id_by_post_link = _build_cms_reference_maps(posts_items_all)
+        cms_id_by_post_link_id, cms_id_by_post_link, thumb_by_cms_id = _build_cms_reference_maps(posts_items_all)
         published_rows = _to_published_rows(
             _extract_data_list(published_payload),
             enable_alias_mode=enable_category_alias_mode,
@@ -448,12 +565,16 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
             cms_id_by_post_link=cms_id_by_post_link,
         )
         scheduled_thumb_fallback_map = _build_scheduled_thumb_map(pending_rows_all)
+        pending_thumb_by_post_id, pending_thumb_by_title = _build_pending_thumb_maps(pending_rows_all)
         scheduled_rows = _to_scheduled_rows(
             _extract_data_list(scheduled_payload),
             enable_alias_mode=enable_category_alias_mode,
             thumb_fallback_map=scheduled_thumb_fallback_map,
             cms_id_by_post_link_id=cms_id_by_post_link_id,
             cms_id_by_post_link=cms_id_by_post_link,
+            thumb_by_cms_id=thumb_by_cms_id,
+            pending_thumb_by_post_id=pending_thumb_by_post_id,
+            pending_thumb_by_title=pending_thumb_by_title,
         )
 
         _write_rows(PUBLISHED_FILE, published_rows)
@@ -469,4 +590,12 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
             "target_fan_page_id": fan_page_id,
         }
     except Exception as exc:  # noqa: BLE001 - keep dashboard alive on sync failure.
+        # region agent log
+        _debug_log(
+            hypothesis_id="H8",
+            location="live_api_sync.py:sync_live_data_to_sample_files",
+            message="Sync function raised exception",
+            data={"exception_type": type(exc).__name__, "has_message": bool(str(exc))},
+        )
+        # endregion
         return {"ok": False, "message": str(exc)}

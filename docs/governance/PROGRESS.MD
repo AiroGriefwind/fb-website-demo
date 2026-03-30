@@ -1142,3 +1142,26 @@
 下一步:
 - 先在线上部署并验证真实 API（publish/update/delete + 错误提示 + 日志记录）全链路。
 - 线上验证通过后，再进行本地 UI 细节收口（按钮密度、文案、微交互和移动端观感）。
+
+日期时间(HKT): 2026-03-30
+负责人/LLM: wangz / GPT-5.4
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@<待填新commit>
+完成内容:
+- [本仓库] 继续收口真实 API 看板链路：补强 `src/dashboard/live_api_sync.py` 的缩略图回填策略，修复“已出未排 -> 已排程”后缩略图掉回 `Dummy1` 的问题。
+- [本仓库] 回滚不再需要的 VPN 接入尝试，移除 `vpn_helper` 依赖，恢复 `app.py` / `live_api_sync.py` / `api_smoke_test_app.py` 的稳定导入路径。
+- [本仓库] 围绕真实写操作体验修复主交互：增加 `fb_publish/fb_update/fb_delete` 的会话级自愈、前端桥接稳定性修正、动作期间跳过全量同步，以及“先关闭弹窗再进入执行”的过渡页机制。
+- [本仓库] 将“锁定窗口拒绝写入 / 未锁定窗口局部顺延”规则接到当前 API 排程路径，并在同步后按 `post_link_id/Post URL` 回填 `is_locked`，避免锁定状态被真数据同步覆盖。
+- [治理] 新增本地运行态忽略规则：`logs/`、`debug-*.log`、`tmp_schedule_*.js`、`.streamlit/`、`data/samples/dashboard_settings_state.json` 不再进入版本控制；`dashboard_ui_debug.jsonl` 保留本地排障用途。
+
+验证结果:
+- `python -m py_compile` 已覆盖 `src/dashboard/app.py`、`board_view.py`、`live_api_sync.py`、`frontend_templates.py`、`api_smoke_test_app.py` 等本轮改动文件并通过。
+- `read_lints` 检查本轮改动文件无新增问题。
+- 本地联调已覆盖：排程弹窗打开与确认、取消排程、修改排程、缩略图回填、锁定图标显示、动作期间主页 loading/结果提示。
+
+风险/阻塞:
+- 当前过渡页与动作执行仍属于整页 rerun 模式，体感已改善但尚未达到“只刷新单列”的理想状态；若继续追求秒级体验，需进一步重构为局部数据拉取或前端组件化列表。
+- `is_locked` 当前仍是前端/本地同步层保存的附加状态，若未来切到真正多用户后端，需要把锁定语义迁入服务端存储与并发校验。
+
+下一步:
+- 将本次 dashboard 真实 API 写操作与交互修复推送到 demo 仓库并回填实际 commit hash。
+- 下一轮重点重构“局部刷新体验”：评估按列/按动作最小化拉取，减少整页 rerun 与同步等待。
