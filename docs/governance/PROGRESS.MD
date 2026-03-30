@@ -1165,3 +1165,22 @@
 下一步:
 - 将本次 dashboard 真实 API 写操作与交互修复推送到 demo 仓库并回填实际 commit hash。
 - 下一轮重点重构“局部刷新体验”：评估按列/按动作最小化拉取，减少整页 rerun 与同步等待。
+
+日期时间(HKT): 2026-03-30
+负责人/LLM: wangz / GPT-5.4
+分支/worktree: feature/bot-ui-ops（本仓库） | demo仓库: AiroGriefwind/fb-website-demo/main@65d9bd4
+完成内容:
+- [治理] 确认 demo 远端 `main` 在 `b136b44` 之后追加的 API 调试提交（如 `dafac41/4efa067/898f0bb/627f1e3/e9463e8`）不再作为交付基线，当前以本地分支 `feature/bot-ui-ops` 的 `65d9bd4` 为准。
+- [治理] 为避免丢失审计线索，保留历史进度记录不删除；改为追加“基线切换记录”，明确后续 demo 展示和部署均以本地修复后的 dashboard 交互与真实 API 链路为准。
+- [治理] 计划执行 demo 远端保护性备份后，再以 `--force-with-lease` 对齐 `public/main` 到本地基线。
+
+验证结果:
+- 本地 `HEAD` 已确认是 `65d9bd4`，且 `b136b44` 为其祖先提交。
+- 后续 API 调试提交经核对均不在当前本地分支历史中，说明 demo 远端与本地基线已发生分叉。
+
+风险/阻塞:
+- 覆盖 demo 远端 `main` 需要改写该仓库公开分支历史；虽会先创建备份分支，但其他协作者若基于旧 `main` 开发，需要在拉取时重新对齐。
+
+下一步:
+- 先推送一个 demo 远端备份分支保存旧 `main` 状态。
+- 再把 demo 远端 `main` 安全对齐到本地 `65d9bd4`，并回填新的远端 commit 记录。
