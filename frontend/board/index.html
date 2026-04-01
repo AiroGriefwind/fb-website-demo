@@ -98,9 +98,55 @@
       .actions { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
       .empty { color: #7f88a8; font-size: 12px; text-align: center; padding: 10px 0; }
       .tiny { font-size: 11px; color: var(--muted); }
-      .trend-item { border-top: 1px dashed #e2e8fb; padding-top: 6px; margin-top: 6px; }
-      .trend-keyword { font-size: 12px; font-weight: 700; }
-      .trend-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+      .trend-list-wrap { display: flex; flex-direction: column; gap: 6px; }
+      .trend-card {
+        border: 1px solid #dbe2ff;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.96);
+        overflow: hidden;
+      }
+      .trend-card-head {
+        width: 100%;
+        border: 0;
+        background: transparent;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        cursor: pointer;
+        text-align: left;
+        font: inherit;
+      }
+      .trend-card-head:hover { background: rgba(90, 90, 177, 0.06); }
+      .trend-head-left {
+        min-width: 0;
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--ink);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .trend-head-right {
+        flex-shrink: 0;
+        font-size: 11px;
+        font-weight: 600;
+        color: #5a5ab1;
+      }
+      .trend-detail {
+        display: none;
+        border-top: 1px solid #e8e8f8;
+        padding: 8px 10px 10px;
+        font-size: 11px;
+        color: #3d3d4a;
+        background: rgba(250, 250, 255, 0.9);
+      }
+      .trend-card.trend-card-open .trend-detail { display: block; }
+      .trend-caption { margin: 0 0 6px 0; color: var(--muted); font-size: 11px; line-height: 1.35; }
+      .trend-detail-ol { margin: 0 0 0 16px; padding: 0; }
+      .trend-detail-ol li { margin: 0 0 4px 0; }
+      .trend-detail-ol a { color: #4f56b5; text-decoration: underline; }
       .modal-mask {
         position: fixed;
         inset: 0;
@@ -131,6 +177,80 @@
         .sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
         .collapse-toggle { display: none; }
         .sidebar-content { display: block !important; }
+      }
+      [x-cloak] { display: none !important; }
+      .api-debug {
+        margin-top: 8px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.92);
+        overflow: hidden;
+      }
+      .api-debug-toggle {
+        width: 100%;
+        text-align: left;
+        padding: 8px 10px;
+        border: 0;
+        background: rgba(240, 244, 255, 0.65);
+        font: inherit;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--ink);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .api-debug-toggle:hover { background: rgba(230, 236, 252, 0.95); }
+      .api-debug-body {
+        border-top: 1px solid var(--line);
+        padding: 8px 10px 10px;
+        max-height: min(420px, 50vh);
+        overflow: auto;
+      }
+      .api-log-row {
+        border: 1px solid #e2e8fb;
+        border-radius: 8px;
+        margin-bottom: 6px;
+        overflow: hidden;
+        background: #fff;
+      }
+      .api-log-head {
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border: 0;
+        background: transparent;
+        font: inherit;
+        font-size: 11px;
+        cursor: pointer;
+        text-align: left;
+      }
+      .api-log-head:hover { background: rgba(90, 90, 177, 0.05); }
+      .api-log-type {
+        font-weight: 700;
+        color: var(--ink);
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .api-log-time { flex-shrink: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
+      .api-log-detail {
+        border-top: 1px dashed #e2e8fb;
+        padding: 8px 10px;
+        background: #fafbff;
+      }
+      .api-log-detail pre {
+        margin: 0;
+        font-size: 10px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+        word-break: break-word;
+        color: #2a3148;
       }
     </style>
   </head>
@@ -172,12 +292,50 @@
             <template x-if="(trends.items || []).length === 0">
               <div class="tiny">暂无趋势数据</div>
             </template>
-            <template x-for="item in (trends.items || []).slice(0, 6)" :key="item.keyword + '_' + item.published_at">
-              <div class="trend-item">
-                <div class="trend-keyword" x-text="item.keyword"></div>
-                <div class="trend-meta" x-text="(item.search_volume || 'N/A') + ' · ' + (item.published_at || '')"></div>
-              </div>
-            </template>
+            <div class="trend-list-wrap" @click.outside="trendOpenIndex = null" x-show="(trends.items || []).length > 0">
+              <template x-for="(item, idx) in (trends.items || [])" :key="'tw-' + idx + '-' + (item.keyword || '')">
+                <div class="trend-card" :class="{ 'trend-card-open': trendOpenIndex === idx }">
+                  <button
+                    type="button"
+                    class="trend-card-head"
+                    :title="'展开详情：' + (item.keyword || '')"
+                    @click.stop="trendOpenIndex = trendOpenIndex === idx ? null : idx"
+                  >
+                    <span class="trend-head-left" x-text="(idx + 1) + '. ' + (item.keyword || '')"></span>
+                    <span
+                      class="trend-head-right"
+                      x-text="trendSortMode === 'time' ? (item.published_at || 'N/A') : (item.search_volume || 'N/A')"
+                    ></span>
+                  </button>
+                  <div class="trend-detail">
+                    <p class="trend-caption"><strong x-text="item.keyword || ''"></strong></p>
+                    <p class="trend-caption">开始时间：<span x-text="item.published_at || 'N/A'"></span></p>
+                    <p class="trend-caption">搜索量：<span x-text="item.search_volume || 'N/A'"></span></p>
+                    <template x-if="(item.detail_items || []).length > 0">
+                      <div>
+                        <p class="trend-caption">趋势细分（RSS 可用字段）</p>
+                        <ol class="trend-detail-ol">
+                          <template x-for="(d, dix) in (item.detail_items || []).slice(0, 3)" :key="'td-' + idx + '-' + dix">
+                            <li>
+                              <template x-if="d && d.url">
+                                <a :href="d.url" target="_blank" rel="noopener noreferrer" x-text="d.title || ''"></a>
+                              </template>
+                              <template x-if="d && !d.url">
+                                <span x-text="d.title || ''"></span>
+                              </template>
+                              <span class="trend-caption" x-show="d && d.source" x-text="' (' + d.source + ')'"></span>
+                            </li>
+                          </template>
+                        </ol>
+                      </div>
+                    </template>
+                    <template x-if="!(item.detail_items || []).length">
+                      <p class="trend-caption">趋势细分：RSS 当前未提供可用明细。</p>
+                    </template>
+                  </div>
+                </div>
+              </template>
+            </div>
             <div class="tiny" style="margin-top:8px;">
               数据源：
               <a :href="trends.source_url || '#'" target="_blank" rel="noopener noreferrer" x-text="trends.source === 'rss' ? 'Google Trends RSS' : '本地样本'"></a>
@@ -215,6 +373,30 @@
             <span class="tiny">模式：<strong x-text="mode.toUpperCase()"></strong></span>
           </div>
           <div class="msg" x-text="message"></div>
+          <div class="api-debug">
+            <button type="button" class="api-debug-toggle" @click="apiDebugOpen = !apiDebugOpen">
+              <span x-text="apiDebugOpen ? '▼' : '▶'"></span>
+              <span>API 调用日志</span>
+              <span class="tiny" style="margin-left:auto;font-weight:500;" x-text="'共 ' + apiLog.length + ' 条'"></span>
+            </button>
+            <div class="api-debug-body" x-show="apiDebugOpen" x-cloak>
+              <template x-if="apiLog.length === 0">
+                <div class="tiny" style="padding:4px 0;">暂无记录（发起任意 API 请求后将显示）。</div>
+              </template>
+              <template x-for="entry in apiLog" :key="entry.id">
+                <div class="api-log-row">
+                  <button type="button" class="api-log-head" @click.stop="entry.rowOpen = !entry.rowOpen">
+                    <span class="api-log-type" x-text="entry.kind"></span>
+                    <span class="api-log-time" x-text="entry.timeLabel"></span>
+                  </button>
+                  <div class="api-log-detail" x-show="entry.rowOpen">
+                    <pre x-text="formatApiLogDetail(entry)"></pre>
+                  </div>
+                </div>
+              </template>
+              <button type="button" class="btn tiny" style="margin-top:6px;" @click="apiLog = []" x-show="apiLog.length">清空日志</button>
+            </div>
+          </div>
         </div>
 
         <div class="board-wrap" :class="{ loading: loading }">
@@ -353,6 +535,9 @@
           columns: [],
           trends: { items: [], source: "sample", source_url: "", refreshed_at: "" },
           trendSortMode: "time",
+          trendOpenIndex: null,
+          apiDebugOpen: false,
+          apiLog: [],
           settings: {
             schedule_window_minutes: 10,
             enable_category_alias_mode: false,
@@ -373,7 +558,7 @@
           },
           scheduleSlots: { hours: [], minutes: [] },
           updateSlots: { hours: [], minutes: [] },
-          categoryOrder: ["娛樂", "社會事", "大視野", "兩岸", "法庭事", "消費", "心韓"],
+          categoryOrder: ["社會事", "大視野", "兩岸", "法庭事", "消費", "娛樂", "心韓"],
           dummyThumb: "/assets/Dummy1.png",
           fallbackSvg: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='640' height='360'><rect width='100%25' height='100%25' fill='%23e9eefb'/><text x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%23627196' font-size='28' font-family='Arial'>FB DUMMY</text></svg>",
           monthOptions: [1,2,3,4,5,6,7,8,9,10,11,12],
@@ -381,6 +566,116 @@
             this.loadTrends();
             this.loadSettings();
             this.reloadAll();
+          },
+          _nowTimeLabel() {
+            const d = new Date();
+            return (
+              d.toLocaleTimeString("zh-CN", { hour12: false }) +
+              "." +
+              String(d.getMilliseconds()).padStart(3, "0")
+            );
+          },
+          _recordApiCall(entry) {
+            entry.id = Date.now() + Math.random();
+            if (entry.rowOpen === undefined) entry.rowOpen = false;
+            this.apiLog.unshift(entry);
+            const max = 80;
+            if (this.apiLog.length > max) this.apiLog.splice(max);
+          },
+          /** 将 FastAPI 在 load_board 时执行的远端 CMS 调用插入日志（紧挨在浏览器 GET board/columns 之下）。 */
+          _mergeUpstreamIntoApiLog(data) {
+            const rows = data && data.cms_upstream_calls;
+            if (!Array.isArray(rows) || !rows.length) return;
+            const mapped = rows.map((row, i) => ({
+              id: Date.now() + Math.random() + i * 0.001,
+              kind: row.kind || "CMS 上游",
+              timeLabel: row.timeLabel || "—",
+              method: row.method || "POST",
+              url: row.url || "",
+              status: row.status,
+              ok: row.ok,
+              durationMs: row.durationMs,
+              requestBody: row.requestBody,
+              responseBody: row.responseBody,
+              error: row.error || null,
+              rowOpen: false,
+            }));
+            this.apiLog.splice(1, 0, ...mapped);
+            const max = 80;
+            if (this.apiLog.length > max) this.apiLog.splice(max);
+          },
+          formatApiLogDetail(entry) {
+            const o = {
+              kind: entry.kind,
+              method: entry.method,
+              url: entry.url,
+              status: entry.status,
+              ok: entry.ok,
+              durationMs: entry.durationMs,
+              request: entry.requestBody !== undefined ? entry.requestBody : null,
+              response: entry.responseBody !== undefined ? entry.responseBody : null,
+            };
+            if (entry.error) o.networkOrReadError = entry.error;
+            return JSON.stringify(o, null, 2);
+          },
+          async apiFetch(kind, url, options) {
+            const opts = options || {};
+            const started = Date.now();
+            const method = (opts.method || "GET").toUpperCase();
+            let requestParsed = null;
+            if (opts.body != null && typeof opts.body === "string") {
+              try {
+                requestParsed = JSON.parse(opts.body);
+              } catch {
+                requestParsed = opts.body.length > 4000 ? opts.body.slice(0, 4000) + "…" : opts.body;
+              }
+            }
+            let res = null;
+            try {
+              res = await fetch(url, opts);
+            } catch (e) {
+              this._recordApiCall({
+                kind,
+                method,
+                url,
+                timeLabel: this._nowTimeLabel(),
+                durationMs: Date.now() - started,
+                status: null,
+                ok: false,
+                requestBody: requestParsed,
+                responseBody: null,
+                error: String(e?.message || e),
+                rowOpen: false,
+              });
+              throw e;
+            }
+            const durationMs = Date.now() - started;
+            let text = "";
+            try {
+              text = await res.clone().text();
+            } catch (e) {
+              text = "(读取响应 body 失败: " + String(e?.message || e) + ")";
+            }
+            let responseBody;
+            try {
+              responseBody = text ? JSON.parse(text) : null;
+            } catch {
+              responseBody = text;
+            }
+            this._recordApiCall({
+              kind,
+              method,
+              url,
+              timeLabel: this._nowTimeLabel(),
+              durationMs,
+              status: res.status,
+              ok: res.ok,
+              requestBody: requestParsed,
+              responseBody,
+              error: null,
+              rowOpen: false,
+            });
+            return res;
           },
           switchMode(nextMode) {
             this.mode = nextMode;
@@ -399,9 +694,12 @@
             this.loading = true;
             try {
               const query = includeExpr ? ("?include=" + encodeURIComponent(includeExpr)) : "";
-              const res = await fetch("/api/board/columns" + query);
+              const path = "/api/board/columns" + query;
+              const kind = includeExpr ? "GET board/columns（局部）" : "GET board/columns（全量）";
+              const res = await this.apiFetch(kind, path, {});
               if (!res.ok) throw new Error("load columns failed");
               const data = await res.json();
+              this._mergeUpstreamIntoApiLog(data);
               if (!this.raw || !includeExpr) {
                 this.raw = data;
               } else {
@@ -423,16 +721,21 @@
           },
           async loadTrends() {
             try {
-              const res = await fetch("/api/sidebar/trends?sort=" + encodeURIComponent(this.trendSortMode));
+              const path = "/api/sidebar/trends?sort=" + encodeURIComponent(this.trendSortMode);
+              const res = await this.apiFetch("GET sidebar/trends", path, {});
               if (!res.ok) throw new Error("trends failed");
               this.trends = await res.json();
+              this.trendOpenIndex = null;
             } catch (e) {
               this.trends = { items: [], source: "sample", source_url: "", refreshed_at: "" };
+              this.trendOpenIndex = null;
             }
           },
           async refreshTrendsRss() {
             try {
-              const res = await fetch("/api/sidebar/trends/refresh", { method: "POST" });
+              const res = await this.apiFetch("POST sidebar/trends/refresh", "/api/sidebar/trends/refresh", {
+                method: "POST",
+              });
               const data = await res.json().catch(() => ({}));
               if (!res.ok) throw new Error(data.detail || "rss refresh failed");
               await this.loadTrends();
@@ -443,7 +746,7 @@
           },
           async loadSettings() {
             try {
-              const res = await fetch("/api/sidebar/settings");
+              const res = await this.apiFetch("GET sidebar/settings", "/api/sidebar/settings", {});
               if (!res.ok) throw new Error("settings load failed");
               this.settings = await res.json();
             } catch (e) {
@@ -452,7 +755,7 @@
           },
           async saveSettings() {
             try {
-              const res = await fetch("/api/sidebar/settings", {
+              const res = await this.apiFetch("PUT sidebar/settings", "/api/sidebar/settings", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(this.settings),
@@ -654,7 +957,12 @@
           async callAction(url, payload) {
             this.loading = true;
             try {
-              const res = await fetch(url, {
+              let kind = "POST action";
+              if (url.includes("/publish")) kind = "POST actions/publish";
+              else if (url.includes("/update")) kind = "POST actions/update";
+              else if (url.includes("/delete")) kind = "POST actions/delete";
+              else if (url.includes("/toggle-lock")) kind = "POST actions/toggle-lock";
+              const res = await this.apiFetch(kind, url, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload),

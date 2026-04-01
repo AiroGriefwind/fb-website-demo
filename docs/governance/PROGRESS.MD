@@ -1283,3 +1283,46 @@
 
 下一步:
 - 继续将“顺延详情（具体哪篇从何时移动到何时）”展示到 UI，提升可解释性。
+
+日期时间(HKT): 2026-04-01
+负责人/LLM: wangz / Composer
+分支/worktree: feature/bot-ui-ops（本仓库）
+完成内容:
+- [本仓库] 看板「已出未排」七列顺序与产品约定对齐：`CATEGORY_ORDER` 调整为 `社會事/大視野/兩岸/法庭事/消費/娛樂/心韓`（`src/dashboard/config.py`、`frontend/board/index.html`）；Streamlit 横向看板列循环改为统一使用 `CATEGORY_ORDER`（`src/dashboard/board_view.py`）。
+- [本仓库] Live 看板读路径修复：`load_board_columns` 在读取样本 JSON 前先调用 `_refresh_live_sample_files`（按 `dashboard_settings_state.json` 的 `cfg_enable_category_alias_mode` / `cfg_target_fan_page_id` 同步），使「立刻刷新 / 定时刷新」与远端 `fb_published` / `fb_scheduled` / `posts` 一致；写动作后的 `_sync_live()` 同样改为读取上述持久化设置，不再硬编码 fan page。
+- [本仓库] 看板渲染兜底判定修正：启用兜底时，仅当「已發佈窗口 + 各分类已出未排窗口」均为空才展开全量列表，**不再**因「已排程」列存在未来稿而抑制兜底（避免排程一篇后主列被 24h 窗口滤空、界面只剩已排程）。
+- [本仓库] 独立看板动作后刷新策略保持**列级局部拉取**（排程/取消排程仍为 `scheduled + pending:分类`；修改为仅 `scheduled`），以满足效率诉求；全量 `fetchColumns("")` 的临时方案已按反馈撤销。
+- [本仓库] Google Trends 侧栏与 Streamlit 对齐：`config.TRENDS_SIDEBAR_DISPLAY_LIMIT = 12`；`GET /api/sidebar/trends` 返回条数上限与 `sidebar_view._render_trends_widget` 一致；Alpine 侧栏热词改为可点击展开卡片，展示开始时间/搜索量及 RSS `detail_items`（最多 3 条链接），并修复原先前端 `slice(0, 6)` 导致条数偏少的问题。
+
+验证结果:
+- `python -c` 导入 `get_sidebar_trends` 与 `TRENDS_SIDEBAR_DISPLAY_LIMIT` 通过；返回 `items` 长度不超过 12。
+- 代码审阅：`services.py` 兜底条件与 `server.py` trends 截断逻辑与 Streamlit 行为一致。
+
+风险/阻塞:
+- 每次 `GET /api/board/columns` 均触发完整 live 同步，RSS/看板刷新频率高时会增加 CMS 与网络负载；若需降载可后续增加可选 `?sync=0` 或服务端节流。
+- 关闭「看板渲染兜底」时，已發佈/已出未排仍严格受 24h 窗口与 CMS 时间字段约束，空列属预期行为。
+
+下一步:
+- 如需在保持列级刷新的前提下避免「窗口异常时单分类 pending 被写成空」的合并风险，可考虑后端在局部 `include` 响应中附带 `partial_merge_hint` 或前端失败时回退全量拉取（按需启用）。
+- 评估看板同步是否与侧边栏 RSS 一样做 TTL/按需刷新，平衡实时性与负载。
+
+日期时间(HKT): 2026-04-02
+负责人/LLM: wangz / Composer
+分支/worktree: feature/bot-ui-ops（本仓库）
+完成内容:
+- [本仓库] 独立看板「API 调用日志」：`apiFetch` 记录浏览器→FastAPI 请求；`live_api_sync.sync_live_data_to_sample_files` 经 `_json_post_traced` 收集远端 CMS 调用链（`login` Basic+JSON、`fb_*`/`posts` Bearer+Cookie），脱敏 headers/密码/token、长 `data` 数组摘要；经 `GET /api/board/columns` 字段 `cms_upstream_calls` 返回（`BoardColumnsResponse` 扩展），前端 `_mergeUpstreamIntoApiLog` 插入同一块可折叠日志，便于对照 `api_smoke_test_app` 行为理解「浏览器只见本地 API、上游在服务端」。
+- [本仓库] 「看板渲染兜底」二次修正：此前「已發佈或任一分類已出未排在 24h 内有稿则整表不兜底」会导致其它分类列仍空却像开关失效；改为 **已發佈 / 已排程 分列** 判断，**已出未排按七个分类独立**——仅当该分类在 24h 窗口内无稿时才对该分类使用全量 pending。
+- [本仓库] `load_board_columns` 对 pending 排序时间：`publish_time` 解析失败则尝试 `updated_at`，再失败用 epoch，避免整行从时间索引中消失而无法进入兜底全量。
+- [本仓库] `live_api_sync._to_pending_rows`：CMS 分类常见 `@栏目` 前缀与 `CATEGORY_ORDER` 不一致导致不进列——增加 `_cms_category_token` 去 `@`；帖子主键兼容 `ID`/`id`。
+
+验证结果:
+- `python -m py_compile` 覆盖 `live_api_sync.py`、`services.py`、`schemas.py` 等本轮改动文件通过。
+- 设置文件 `cfg_enable_board_fallback_mode` / `cfg_enable_category_alias_mode` 与 FastAPI 读取路径已核对；分类归一化仍在每次 live sync 时生效，需保存设置后刷新看板触发写回样本 JSON。
+
+风险/阻塞:
+- `cms_upstream_calls` 随列接口返回，payload 变大；调试日志前端默认最多 80 条。
+- 写动作路径（`CmsActionClient`）尚未纳入同一 trace，若需可在后续对 `fb_publish`/`fb_update`/`fb_delete` 做对称埋点。
+
+下一步:
+- 按需将 CMS 写操作纳入 `cms_upstream_calls` 或独立 `last_action_trace`。
+- 若需减轻负载，可为 `GET /api/board/columns` 增加跳过同步或合并轮询策略。

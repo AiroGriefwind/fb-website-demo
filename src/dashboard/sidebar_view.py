@@ -17,6 +17,7 @@ from src.dashboard.config import (
     HKT_TZ,
     SCHEDULE_WINDOW_OPTIONS,
     TOKEN_ENV,
+    TRENDS_SIDEBAR_DISPLAY_LIMIT,
     TRENDS_WEB_URL,
     WORKSPACE_ROOT,
 )
@@ -240,7 +241,7 @@ def _render_settings_content() -> None:
 
 def _render_trends_widget(trends: list[dict[str, Any]], sort_mode: str) -> None:
     items = []
-    for idx, item in enumerate(trends[:12], start=1):
+    for idx, item in enumerate(trends[:TRENDS_SIDEBAR_DISPLAY_LIMIT], start=1):
         details = item.get("detail_items") if isinstance(item.get("detail_items"), list) else []
         detail_items = []
         for d in details[:3]:

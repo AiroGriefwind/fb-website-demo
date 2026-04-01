@@ -1802,7 +1802,7 @@ def render_today_board() -> None:
     board_html += '<div class="board-scroll"><div class="board-grid">'
     board_html += _build_column_html("已發佈", published_cards, sticky_slot=1, toggle_id="toggle-col1", toggle_icon="📰")
     board_html += _build_column_html("已排程", scheduled_cards, sticky_slot=2, toggle_id="toggle-col2", toggle_icon="📅")
-    for category in ["社會事", "大視野", "兩岸", "法庭事", "消費", "娛樂", "心韓"]:
+    for category in CATEGORY_ORDER:
         category_cards = [
             _card_html(item, dt, schedule_item_id=str(item.get("item_id", "")).strip())
             for dt, item in pending_by_category.get(category, [])

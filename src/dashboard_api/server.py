@@ -14,6 +14,7 @@ from src.dashboard.config import (
     DEFAULT_SCHEDULE_WINDOW_MINUTES,
     HKT_TZ,
     SAMPLES_DIR,
+    TRENDS_SIDEBAR_DISPLAY_LIMIT,
     TRENDS_WEB_URL,
 )
 from src.dashboard.data_utils import (
@@ -92,7 +93,7 @@ def get_sidebar_trends(sort: str = Query(default="time", pattern="^(time|volume)
     else:
         trends = sorted(trends, key=lambda x: traffic_to_int(str(x.get("search_volume", ""))), reverse=True)
     return {
-        "items": trends,
+        "items": trends[:TRENDS_SIDEBAR_DISPLAY_LIMIT],
         "source": "rss" if using_rss else "sample",
         "source_url": TRENDS_WEB_URL,
         "refreshed_at": datetime.now(HKT_TZ).strftime("%m-%d %H:%M"),

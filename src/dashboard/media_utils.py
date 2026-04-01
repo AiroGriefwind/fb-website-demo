@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -40,7 +41,9 @@ def parse_publish_time(value: str) -> datetime | None:
     if not value:
         return None
     try:
-        normalized = value.replace("Z", "+00:00")
+        normalized = value.strip().replace("Z", "+00:00")
+        # Accept offsets like +0000 / -0800 from older payloads.
+        normalized = re.sub(r"([+-]\d{2})(\d{2})$", r"\1:\2", normalized)
         parsed = datetime.fromisoformat(normalized)
         if parsed.tzinfo is None:
             parsed = parsed.replace(tzinfo=timezone.utc)
