@@ -36,4 +36,6 @@ class BoardColumnsResponse(BaseModel):
     scheduled: list[dict]
     pending_by_category: dict[str, list[dict]]
     generated_at: str
+    # Populated when board load triggers live sync (browser → FastAPI → CMS).
+    cms_upstream_calls: list[dict] = Field(default_factory=list)
 

@@ -114,6 +114,119 @@ def _normalize_endpoint_url(raw_base_url: str) -> str:
     return f"{base}/fb-scheduler/"
 
 
+def _trace_time_label() -> str:
+    d = datetime.now(HKT_TZ)
+    return d.strftime("%H:%M:%S.") + f"{d.microsecond // 1000:03d}"
+
+
+def _trace_safe_headers(headers: dict[str, str]) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for k, v in headers.items():
+        lk = str(k).lower()
+        if lk == "authorization":
+            if str(v).startswith("Bearer "):
+                out[k] = "Bearer ***"
+            elif str(v).startswith("Basic "):
+                out[k] = "Basic ***"
+            else:
+                out[k] = "***"
+        elif lk == "cookie":
+            s = str(v)
+            out[k] = (s[:20] + "…") if len(s) > 20 else (s or "")
+        else:
+            out[k] = str(v)
+    return out
+
+
+def _trace_safe_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    p = {k: v for k, v in payload.items() if v is not None}
+    if "password" in p:
+        p = dict(p)
+        p["password"] = "***"
+    return p
+
+
+def _compact_trace_response(data: Any) -> Any:
+    """Shrink large CMS JSON for UI trace; redact tokens in nested data dict."""
+    if not isinstance(data, dict):
+        return data
+    out = dict(data)
+    inner = out.get("data")
+    if isinstance(inner, dict):
+        di = dict(inner)
+        for tk in ("token", "access_token"):
+            if di.get(tk):
+                di[tk] = "***"
+        out["data"] = di
+    elif isinstance(inner, list):
+        n = len(inner)
+        if n > 3:
+            sample: list[Any] = []
+            for it in inner[:2]:
+                if isinstance(it, dict):
+                    keys = ("title", "message", "keyword", "id", "post_title", "ID")
+                    slim = {k: it.get(k) for k in keys if k in it}
+                    if not slim:
+                        slim = {"_keys": list(it.keys())[:12]}
+                    sample.append(slim)
+                else:
+                    sample.append(str(it)[:120])
+            out["data"] = sample
+            out["_trace_note"] = f"data 数组共 {n} 条，此处仅预览前 2 条摘要"
+        else:
+            out["data"] = inner
+    return out
+
+
+def _json_post_traced(
+    url: str,
+    payload: dict[str, Any],
+    headers: dict[str, str],
+    *,
+    trace: list[dict[str, Any]],
+    call_label: str,
+) -> tuple[int, dict[str, str], Any]:
+    t0 = time.perf_counter()
+    time_label = _trace_time_label()
+    safe_req = {"json": _trace_safe_payload(payload), "headers": _trace_safe_headers(headers)}
+    try:
+        code, hdrs, data = _json_post(url, payload, headers)
+    except Exception as exc:
+        dur = int((time.perf_counter() - t0) * 1000)
+        trace.append(
+            {
+                "kind": call_label,
+                "layer": "upstream_cms",
+                "timeLabel": time_label,
+                "method": "POST",
+                "url": url,
+                "status": None,
+                "ok": False,
+                "durationMs": dur,
+                "requestBody": safe_req,
+                "responseBody": None,
+                "error": str(exc),
+            }
+        )
+        raise
+    dur = int((time.perf_counter() - t0) * 1000)
+    trace.append(
+        {
+            "kind": call_label,
+            "layer": "upstream_cms",
+            "timeLabel": time_label,
+            "method": "POST",
+            "url": url,
+            "status": int(code),
+            "ok": 200 <= int(code) < 400,
+            "durationMs": dur,
+            "requestBody": safe_req,
+            "responseBody": _compact_trace_response(data),
+        }
+    )
+    return code, hdrs, data
+
+
 def _json_post(url: str, payload: dict[str, Any], headers: dict[str, str]) -> tuple[int, dict[str, str], Any]:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     # region agent log
@@ -414,6 +527,14 @@ def _to_scheduled_rows(
     return rows
 
 
+def _cms_category_token(raw: str) -> str:
+    """CMS 常返回「@消費」等带 @ 前缀的分类，与看板 CATEGORY_ORDER 不一致时会被整列丢弃。"""
+    s = str(raw or "").strip().replace(" ", "")
+    if s.startswith("@"):
+        s = s[1:]
+    return s
+
+
 def _to_pending_rows(
     items: list[dict[str, Any]],
     now_iso: str,
@@ -422,7 +543,7 @@ def _to_pending_rows(
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for item in items:
-        post_id = str(item.get("ID", "")).strip()
+        post_id = str(item.get("ID") or item.get("id") or "").strip()
         if not post_id:
             continue
         if _is_already_scheduled_by_fan_page(item, target_fan_page_id):
@@ -430,9 +551,9 @@ def _to_pending_rows(
         fan_page_entry = _extract_fan_page_entry(item, target_fan_page_id)
         categories = item.get("categories", [])
         if isinstance(categories, list) and categories:
-            cat = str(categories[0]).strip().replace(" ", "")
+            cat = _cms_category_token(str(categories[0]))
         else:
-            cat = str(item.get("category", "")).strip().replace(" ", "")
+            cat = _cms_category_token(str(item.get("category", "")))
         cat = _normalize_category(cat, enable_alias_mode)
         rows.append(
             {
@@ -476,6 +597,7 @@ def _extract_data_list(payload: Any) -> list[dict[str, Any]]:
 
 @st.cache_data(show_spinner=False, ttl=60)
 def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, target_fan_page_id: str = "") -> dict[str, Any]:
+    trace: list[dict[str, Any]] = []
     try:
         # region agent log
         _debug_log(
@@ -493,7 +615,7 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
         posts_limit = int(_secret_or_env("API_POSTS_LIMIT", "10") or 10)
 
         if not api_base or not username or not password:
-            return {"ok": False, "message": "missing API_BASE_URL/USERNAME/PASSWORD"}
+            return {"ok": False, "message": "missing API_BASE_URL/USERNAME/PASSWORD", "cms_upstream_calls": trace}
 
         api_url, url_user, url_pass = _extract_basic_from_url(api_base)
         api_url = _normalize_endpoint_url(api_url)
@@ -505,10 +627,12 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
             raw = f"{basic_user}:{basic_pass}".encode("utf-8")
             login_headers["Authorization"] = f"Basic {base64.b64encode(raw).decode('ascii')}"
 
-        code, login_resp_headers, login_payload = _json_post(
+        code, login_resp_headers, login_payload = _json_post_traced(
             api_url,
             {"action": "login", "username": username, "password": password},
             login_headers,
+            trace=trace,
+            call_label="CMS login（Basic 网关 + JSON 用户名密码 → token）",
         )
         token = str((login_payload.get("data", {}) if isinstance(login_payload, dict) else {}).get("token", "")).strip()
         if code != 200 or not token:
@@ -520,7 +644,12 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
                 data={"status_code": code, "token_present": bool(token)},
             )
             # endregion
-            return {"ok": False, "message": f"login failed ({code})", "login_payload": login_payload}
+            return {
+                "ok": False,
+                "message": f"login failed ({code})",
+                "login_payload": login_payload,
+                "cms_upstream_calls": trace,
+            }
 
         session_cookie = str(login_resp_headers.get("Set-Cookie", "")).split(";", 1)[0].strip()
         common_headers = {
@@ -530,8 +659,20 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
         if session_cookie:
             common_headers["Cookie"] = session_cookie
 
-        _, _, published_payload = _json_post(api_url, {"action": "fb_published"}, common_headers)
-        _, _, scheduled_payload = _json_post(api_url, {"action": "fb_scheduled"}, common_headers)
+        _, _, published_payload = _json_post_traced(
+            api_url,
+            {"action": "fb_published"},
+            common_headers,
+            trace=trace,
+            call_label="CMS fb_published（Bearer + Cookie）",
+        )
+        _, _, scheduled_payload = _json_post_traced(
+            api_url,
+            {"action": "fb_scheduled"},
+            common_headers,
+            trace=trace,
+            call_label="CMS fb_scheduled（Bearer + Cookie）",
+        )
 
         now_iso = datetime.now(HKT_TZ).isoformat()
         fan_page_id = str(target_fan_page_id or _secret_or_env("TARGET_FAN_PAGE_ID", "350584865140118")).strip()
@@ -539,10 +680,12 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
         seen_pending: set[str] = set()
         posts_items_all: list[dict[str, Any]] = []
         for cat in CATEGORY_ORDER:
-            _, _, posts_payload = _json_post(
+            _, _, posts_payload = _json_post_traced(
                 api_url,
                 {"action": "posts", "category": cat, "search": "", "limit": posts_limit},
                 common_headers,
+                trace=trace,
+                call_label=f"CMS posts（{cat}，Bearer + Cookie）",
             )
             current_posts_items = _extract_data_list(posts_payload)
             posts_items_all.extend(current_posts_items)
@@ -588,6 +731,7 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
             "pending_count": len(pending_rows_all),
             "source_url": api_url,
             "target_fan_page_id": fan_page_id,
+            "cms_upstream_calls": trace,
         }
     except Exception as exc:  # noqa: BLE001 - keep dashboard alive on sync failure.
         # region agent log
@@ -598,4 +742,4 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
             data={"exception_type": type(exc).__name__, "has_message": bool(str(exc))},
         )
         # endregion
-        return {"ok": False, "message": str(exc)}
+        return {"ok": False, "message": str(exc), "cms_upstream_calls": trace}

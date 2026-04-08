@@ -24,6 +24,20 @@ def _env_value(key: str, default: str = "") -> str:
     return default
 
 
+def _credential_value(primary_key: str, legacy_key: str, default: str = "") -> str:
+    # Prefer explicit CMS_* keys, then project .env legacy keys, and finally process env.
+    explicit = _env_value(primary_key, "")
+    if explicit:
+        return explicit
+    legacy_file = str(ENV_VALUES.get(legacy_key, "")).strip()
+    if legacy_file:
+        return legacy_file
+    legacy_env = os.getenv(legacy_key, "").strip()
+    if legacy_env:
+        return legacy_env
+    return default
+
+
 def _extract_basic_from_url(url: str) -> tuple[str, str, str]:
     parsed = parse.urlsplit(url.strip())
     if not parsed.scheme or not parsed.netloc:
@@ -112,8 +126,8 @@ class CmsActionClient:
         raw_base = _env_value("API_BASE_URL")
         raw_base, user_from_url, pass_from_url = _extract_basic_from_url(raw_base)
         self.base_url = _normalize_endpoint_url(raw_base)
-        self.username = _env_value("USERNAME")
-        self.password = _env_value("PASSWORD")
+        self.username = _credential_value("CMS_USERNAME", "USERNAME")
+        self.password = _credential_value("CMS_PASSWORD", "PASSWORD")
         self.basic_user = _env_value("BASIC_AUTH_USERNAME") or user_from_url
         self.basic_pass = _env_value("BASIC_AUTH_PASSWORD") or pass_from_url
         self.login_cookies = _env_value("LOGIN_COOKIES")

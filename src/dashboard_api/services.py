@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 from src.dashboard.config import CATEGORY_ORDER, HKT_TZ, PENDING_FILE, PUBLISHED_FILE, SCHEDULED_FILE
@@ -68,6 +70,20 @@ def _collect_time_sorted_items(items: list[dict[str, Any]]) -> list[tuple[dateti
         if dt:
             rows.append((dt, row))
     return rows
+
+
+def _pending_rows_with_sort_dt(rows: list[dict[str, Any]]) -> list[tuple[datetime, dict[str, Any]]]:
+    """已出未排：优先 publish_time，失败则用 updated_at，再失败则用 epoch（仅在该分类启用兜底全量时可见）。"""
+    epoch_hkt = datetime(1970, 1, 1, tzinfo=timezone.utc).astimezone(HKT_TZ)
+    out: list[tuple[datetime, dict[str, Any]]] = []
+    for row in rows:
+        dt = parse_publish_time(str(row.get("publish_time", "")))
+        if not dt:
+            dt = parse_publish_time(str(row.get("updated_at", "")))
+        if not dt:
+            dt = epoch_hkt
+        out.append((dt, row))
+    return out
 
 
 def _plan_publish_slot_adjustments(
@@ -146,45 +162,103 @@ def _plan_publish_slot_adjustments(
     return True, "", pre_updates, {"shifted_rows": shifted_rows, "skipped_locked_rows": skipped_locked_rows}
 
 
-def _sync_live() -> dict[str, Any]:
+def _read_default_session_settings() -> dict[str, Any]:
+    settings_file = Path(__file__).resolve().parents[2] / "data" / "samples" / "dashboard_settings_state.json"
+    try:
+        raw = json.loads(settings_file.read_text(encoding="utf-8")) if settings_file.exists() else {}
+        sessions = raw.get("sessions", {}) if isinstance(raw.get("sessions", {}), dict) else {}
+        default = sessions.get("default", {}) if isinstance(sessions.get("default", {}), dict) else {}
+        return default if isinstance(default, dict) else {}
+    except Exception:
+        return {}
+
+
+def _refresh_live_sample_files(default_session: dict[str, Any]) -> dict[str, Any]:
+    """Pull fb_published / fb_scheduled / posts from CMS and rewrite sample JSON files."""
     from src.dashboard.live_api_sync import sync_live_data_to_sample_files
 
+    enable_alias = bool(default_session.get("cfg_enable_category_alias_mode", False))
+    target_fan = str(default_session.get("cfg_target_fan_page_id", "350584865140118")).strip() or "350584865140118"
     try:
         sync_live_data_to_sample_files.clear()
     except Exception:
         pass
-    return sync_live_data_to_sample_files(enable_category_alias_mode=False, target_fan_page_id="350584865140118")
+    return sync_live_data_to_sample_files(
+        enable_category_alias_mode=enable_alias,
+        target_fan_page_id=target_fan,
+    )
+
+
+def _sync_live() -> dict[str, Any]:
+    return _refresh_live_sample_files(_read_default_session_settings())
 
 
 def load_board_columns(includes: list[str] | None = None) -> dict[str, Any]:
+    default_session = _read_default_session_settings()
+    sync_result = _refresh_live_sample_files(default_session)
+    cms_upstream_calls: list[dict[str, Any]] = []
+    if isinstance(sync_result, dict):
+        raw_calls = sync_result.get("cms_upstream_calls")
+        if isinstance(raw_calls, list):
+            cms_upstream_calls = raw_calls
+
     now_hkt = datetime.now(HKT_TZ)
     past_24h = now_hkt - timedelta(hours=24)
     next_24h = now_hkt + timedelta(hours=24)
 
     published_items = _collect_time_sorted_items(read_json_list(PUBLISHED_FILE))
     scheduled_items = _collect_time_sorted_items(read_json_list(SCHEDULED_FILE))
-    pending_items = _collect_time_sorted_items(read_json_list(PENDING_FILE))
+    pending_pairs = _pending_rows_with_sort_dt(read_json_list(PENDING_FILE))
 
-    published = [
+    published_windowed = [
         item
         for dt, item in sorted(published_items, key=lambda x: x[0], reverse=True)
         if past_24h <= dt <= now_hkt
     ]
-    scheduled = [item for dt, item in sorted(scheduled_items, key=lambda x: x[0]) if now_hkt <= dt <= next_24h]
+    scheduled_windowed = [item for dt, item in sorted(scheduled_items, key=lambda x: x[0]) if now_hkt <= dt <= next_24h]
 
-    pending_by_category: dict[str, list[dict[str, Any]]] = {c: [] for c in CATEGORY_ORDER}
-    for dt, row in sorted(pending_items, key=lambda x: x[0], reverse=True):
+    pending_windowed_by_category: dict[str, list[dict[str, Any]]] = {c: [] for c in CATEGORY_ORDER}
+    for dt, row in sorted(pending_pairs, key=lambda x: x[0], reverse=True):
         if not (past_24h <= dt <= now_hkt):
             continue
         category = str(row.get("category", ""))
-        if category in pending_by_category:
-            pending_by_category[category].append(row)
+        if category in pending_windowed_by_category:
+            pending_windowed_by_category[category].append(row)
+
+    published_all = [item for dt, item in sorted(published_items, key=lambda x: x[0], reverse=True)]
+    scheduled_all = [item for dt, item in sorted(scheduled_items, key=lambda x: x[0])]
+    pending_all_by_category: dict[str, list[dict[str, Any]]] = {c: [] for c in CATEGORY_ORDER}
+    for dt, row in sorted(pending_pairs, key=lambda x: x[0], reverse=True):
+        category = str(row.get("category", ""))
+        if category in pending_all_by_category:
+            pending_all_by_category[category].append(row)
+
+    fallback_mode_enabled = bool(
+        default_session.get("cfg_enable_board_fallback_mode", default_session.get("enable_board_fallback_mode", False))
+    )
+
+    # 与 Streamlit 侧一致：兜底按「列」独立判断。旧实现用「已發佈或任一分類有待排」绑死三列，
+    # 会导致某一分类在 24h 内为空时永远不兜底，即使用户已勾选「看板渲染兜底」。
+    use_fallback_published = bool(fallback_mode_enabled and not published_windowed)
+    use_fallback_scheduled = bool(fallback_mode_enabled and not scheduled_windowed)
+    published = published_all if use_fallback_published else published_windowed
+    scheduled = scheduled_all if use_fallback_scheduled else scheduled_windowed
+
+    pending_by_category: dict[str, list[dict[str, Any]]] = {}
+    for cat in CATEGORY_ORDER:
+        win_list = pending_windowed_by_category[cat]
+        full_list = pending_all_by_category[cat]
+        if fallback_mode_enabled and not win_list:
+            pending_by_category[cat] = full_list
+        else:
+            pending_by_category[cat] = win_list
 
     payload = {
         "published": published,
         "scheduled": scheduled,
         "pending_by_category": pending_by_category,
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "cms_upstream_calls": cms_upstream_calls,
     }
     if not includes:
         return payload
@@ -205,6 +279,7 @@ def load_board_columns(includes: list[str] | None = None) -> dict[str, Any]:
         "scheduled": payload["scheduled"] if "scheduled" in include_set else [],
         "pending_by_category": filtered_pending,
         "generated_at": payload["generated_at"],
+        "cms_upstream_calls": payload["cms_upstream_calls"],
     }
 
 

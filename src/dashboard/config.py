@@ -19,10 +19,12 @@ HKT_TZ = timezone(timedelta(hours=8))
 TRENDS_RSS_URL = "https://trends.google.com/trending/rss?geo=HK"
 TRENDS_WEB_URL = "https://trends.google.com/trending?geo=HK"
 TRENDS_RSS_TTL_SECONDS = 900
+# Match `sidebar_view._render_trends_widget` (`trends[:12]`).
+TRENDS_SIDEBAR_DISPLAY_LIMIT = 12
 DEFAULT_SCHEDULE_WINDOW_MINUTES = 10
 SCHEDULE_WINDOW_OPTIONS = [5, 10, 15, 20, 30]
 
-CATEGORY_ORDER = ["娛樂", "社會事", "大視野", "兩岸", "法庭事", "消費", "心韓"]
+CATEGORY_ORDER = ["社會事", "大視野", "兩岸", "法庭事", "消費", "娛樂", "心韓"]
 CATEGORY_BASE_COLORS = {
     "社會事": "#009933",
     "大視野": "#FF6600",

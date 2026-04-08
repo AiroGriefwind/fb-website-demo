@@ -36,6 +36,20 @@ def _secret_or_env(key: str, default: str = "") -> str:
     return default
 
 
+def _credential_value(primary_key: str, legacy_key: str, default: str = "") -> str:
+    # Prefer explicit CMS_* keys, then project .env legacy keys, and finally process env.
+    explicit = _secret_or_env(primary_key, "")
+    if explicit:
+        return explicit
+    file_value = str(ENV_VALUES.get(legacy_key, "")).strip()
+    if file_value:
+        return file_value
+    env_value = os.getenv(legacy_key, "").strip()
+    if env_value:
+        return env_value
+    return default
+
+
 def _build_basic_auth(username: str, password: str) -> str:
     raw = f"{username}:{password}".encode("utf-8")
     return f"Basic {base64.b64encode(raw).decode('ascii')}"
@@ -141,8 +155,8 @@ class FBActionClient:
         raw_base = _secret_or_env("API_BASE_URL")
         raw_base, user_from_url, pass_from_url = _extract_basic_from_url(raw_base)
         self.base_url = _normalize_endpoint_url(raw_base)
-        self.username = _secret_or_env("USERNAME")
-        self.password = _secret_or_env("PASSWORD")
+        self.username = _credential_value("CMS_USERNAME", "USERNAME")
+        self.password = _credential_value("CMS_PASSWORD", "PASSWORD")
         self.basic_user = _secret_or_env("BASIC_AUTH_USERNAME") or user_from_url
         self.basic_pass = _secret_or_env("BASIC_AUTH_PASSWORD") or pass_from_url
         self.login_cookies = _secret_or_env("LOGIN_COOKIES")
