@@ -83,7 +83,30 @@
       .col.sticky-2 { position: sticky; left: calc(var(--col-width) + var(--col-gap)); z-index: 5; box-shadow: 6px 0 10px rgba(36, 49, 88, 0.04); }
       .col .title { border-bottom: 1px solid #edf1fb; padding: 8px 10px; font-weight: 700; font-size: 14px; background: #fff; border-radius: 10px 10px 0 0; }
       .stack { padding: 8px; display: flex; flex-direction: column; gap: 8px; }
-      .card { border: 1px solid #dce4f8; border-radius: 8px; background: #fbfcff; padding: 8px; }
+      .card { border: 1px solid #dce4f8; border-radius: 8px; background: #fbfcff; padding: 8px; position: relative; }
+      .card.card-optimistic {
+        opacity: 0.58;
+        background: #eef1f8;
+        border-style: dashed;
+        pointer-events: none;
+      }
+      .card.card-optimistic .actions { display: none; }
+      .optimistic-badge {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        z-index: 2;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 3px 8px;
+        border-radius: 6px;
+        background: rgba(46, 91, 255, 0.92);
+        color: #fff;
+        letter-spacing: 0.02em;
+      }
+      .optimistic-badge.err {
+        background: rgba(191, 31, 61, 0.92);
+      }
       .thumb { width: 100%; height: 120px; object-fit: cover; border-radius: 6px; background: #eff3fc; border: 1px solid #e5ebfb; }
       .meta { font-size: 12px; color: #556; margin: 6px 0 4px; }
       .title-text {
@@ -266,8 +289,8 @@
           <div class="side-block">
             <div class="side-sub">数据模式</div>
             <div class="chip-row">
-              <button class="chip" :class="{ active: mode === 'mock' }" @click="switchMode('mock')">Mock</button>
-              <button class="chip" :class="{ active: mode === 'live' }" @click="switchMode('live')">Live API</button>
+              <button class="chip" :class="{ active: mode === 'mock' }" @click="switchMode('mock')" :disabled="actionBusy">Mock</button>
+              <button class="chip" :class="{ active: mode === 'live' }" @click="switchMode('live')" :disabled="actionBusy">Live API</button>
             </div>
             <div class="tiny" style="margin-top:8px;">Mock 下动作只改前端本地数据，便于调 UI。</div>
           </div>
@@ -275,9 +298,9 @@
           <div class="side-block">
             <div class="side-sub">栏目筛选</div>
             <div class="chip-row">
-              <button class="chip" :class="{ active: selectedCategory === 'ALL' }" @click="selectedCategory = 'ALL'; rebuildColumns()">全部</button>
+              <button class="chip" :class="{ active: selectedCategory === 'ALL' }" @click="selectedCategory = 'ALL'; rebuildColumns()" :disabled="actionBusy">全部</button>
               <template x-for="cat in categoryOrder" :key="cat">
-                <button class="chip" :class="{ active: selectedCategory === cat }" @click="selectedCategory = cat; rebuildColumns()" x-text="cat"></button>
+                <button class="chip" :class="{ active: selectedCategory === cat }" @click="selectedCategory = cat; rebuildColumns()" x-text="cat" :disabled="actionBusy"></button>
               </template>
             </div>
           </div>
@@ -285,9 +308,9 @@
           <div class="side-block">
             <div class="side-sub">Google Trends（香港）</div>
             <div class="chip-row" style="margin-bottom:8px;">
-              <button class="chip" :class="{ active: trendSortMode === 'time' }" @click="trendSortMode='time'; loadTrends()">开始时间</button>
-              <button class="chip" :class="{ active: trendSortMode === 'volume' }" @click="trendSortMode='volume'; loadTrends()">搜索量</button>
-              <button class="btn tiny" @click="refreshTrendsRss()">↻ RSS</button>
+              <button class="chip" :class="{ active: trendSortMode === 'time' }" @click="trendSortMode='time'; loadTrends()" :disabled="loading || actionBusy">开始时间</button>
+              <button class="chip" :class="{ active: trendSortMode === 'volume' }" @click="trendSortMode='volume'; loadTrends()" :disabled="loading || actionBusy">搜索量</button>
+              <button class="btn tiny" @click="refreshTrendsRss()" :disabled="loading || actionBusy">↻ RSS</button>
             </div>
             <template x-if="(trends.items || []).length === 0">
               <div class="tiny">暂无趋势数据</div>
@@ -358,7 +381,7 @@
             <label class="tiny" style="display:block; margin-top:6px;"><input type="checkbox" x-model="settings.enable_board_fallback_mode" /> 启用看板渲染兜底</label>
             <label class="tiny" style="display:block; margin-top:8px;">测试 Fan Page ID</label>
             <input class="field" type="text" x-model="settings.target_fan_page_id" />
-            <button class="btn primary" @click="saveSettings()">保存设置</button>
+            <button class="btn primary" @click="saveSettings()" :disabled="loading || actionBusy">保存设置</button>
           </div>
         </div>
       </aside>
@@ -366,8 +389,8 @@
       <main class="main">
         <div class="header">
           <div class="row">
-            <button class="btn primary" @click="reloadAll" :disabled="loading">刷新全部</button>
-            <button class="btn" @click="toggleAutoPoll">
+            <button class="btn primary" @click="reloadAll" :disabled="loading || actionBusy">刷新全部</button>
+            <button class="btn" @click="toggleAutoPoll" :disabled="actionBusy">
               <span x-text="autoPoll ? '停止自动刷新(20s)' : '开启自动刷新(20s)'"></span>
             </button>
             <span class="tiny">模式：<strong x-text="mode.toUpperCase()"></strong></span>
@@ -408,20 +431,21 @@
                   <template x-if="(col.items || []).length === 0">
                     <div class="empty">暂无数据</div>
                   </template>
-                  <template x-for="item in col.items" :key="item.post_link_id || item.item_id || item.title">
-                    <div class="card">
+                  <template x-for="item in col.items" :key="item._optTempId || item.post_link_id || item.item_id || item.title">
+                    <div class="card" :class="{ 'card-optimistic': item._optimistic }">
+                      <div class="optimistic-badge" :class="{ err: item._optimisticPhase === 'error' }" x-show="item._optimistic" x-text="item._optimisticPhase === 'error' ? (item._optimisticErr || '失败') : 'loading…'"></div>
                       <img class="thumb" :src="resolveThumb(item)" @error="onThumbError($event)" alt="thumbnail" />
-                      <div class="meta" x-text="item.publish_time || ''"></div>
+                      <div class="meta" x-text="formatDisplayTimeHkt(item.publish_time)"></div>
                       <div class="title-text" x-text="item.title || 'N/A'"></div>
                       <div class="actions">
                         <template x-if="col.kind === 'pending'">
-                          <button class="btn" @click="openScheduleDialog(item)">排程</button>
+                          <button class="btn" @click="openScheduleDialog(item)" :disabled="loading || actionBusy">排程</button>
                         </template>
                         <template x-if="col.kind === 'scheduled'">
                           <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                            <button class="btn" @click="openUpdateDialog(item)">修改</button>
-                            <button class="btn" @click="openDeleteDialog(item)">返回已出未排</button>
-                            <button class="btn" @click="toggleLock(item)" x-text="item.is_locked ? '解锁' : '锁定'"></button>
+                            <button class="btn" @click="openUpdateDialog(item)" :disabled="loading || actionBusy">修改</button>
+                            <button class="btn" @click="openDeleteDialog(item)" :disabled="loading || actionBusy">返回已出未排</button>
+                            <button class="btn" @click="toggleLock(item)" :disabled="loading || actionBusy" x-text="item.is_locked ? '解锁' : '锁定'"></button>
                           </div>
                         </template>
                       </div>
@@ -510,7 +534,7 @@
           <div class="modal">
             <h3>确认删除排程</h3>
             <div class="tiny" style="margin-top:8px;" x-text="'确认将《' + (dialogs.delete.item?.title || 'N/A') + '》返回已出未排？'"></div>
-            <div class="tiny" style="margin-top:4px;" x-text="'当前排程：' + (dialogs.delete.item?.publish_time || 'N/A')"></div>
+            <div class="tiny" style="margin-top:4px;" x-text="'当前排程：' + (formatDisplayTimeHkt(dialogs.delete.item?.publish_time) || 'N/A')"></div>
             <div class="error-text" x-show="dialogs.delete.error" x-text="dialogs.delete.error"></div>
             <div class="actions">
               <button class="btn" @click="closeDialog('delete')">返回</button>
@@ -525,6 +549,8 @@
       function boardApp() {
         return {
           loading: false,
+          actionBusy: false,
+          _apiBypassBusy: false,
           autoPoll: false,
           pollTimer: null,
           sidebarCollapsed: false,
@@ -619,6 +645,9 @@
             return JSON.stringify(o, null, 2);
           },
           async apiFetch(kind, url, options) {
+            if (this.actionBusy && !this._apiBypassBusy) {
+              throw new Error("当前有贴文操作进行中，请稍候再试");
+            }
             const opts = options || {};
             const started = Date.now();
             const method = (opts.method || "GET").toUpperCase();
@@ -678,10 +707,18 @@
             return res;
           },
           switchMode(nextMode) {
+            if (this.actionBusy) {
+              this.message = "当前有贴文操作进行中，请稍候再切换模式";
+              return;
+            }
             this.mode = nextMode;
             this.reloadAll();
           },
           async reloadAll() {
+            if (this.actionBusy) {
+              this.message = "当前有贴文操作进行中，请稍候再刷新";
+              return;
+            }
             if (this.mode === "mock") {
               this.raw = this.buildMockPayload();
               this.rebuildColumns();
@@ -690,8 +727,10 @@
             }
             await this.fetchColumns("");
           },
-          async fetchColumns(includeExpr) {
-            this.loading = true;
+          async fetchColumns(includeExpr, opts) {
+            const o = opts || {};
+            const skipBoardLoading = o.skipBoardLoading === true;
+            if (!skipBoardLoading) this.loading = true;
             try {
               const query = includeExpr ? ("?include=" + encodeURIComponent(includeExpr)) : "";
               const path = "/api/board/columns" + query;
@@ -712,14 +751,18 @@
                 });
               }
               this.rebuildColumns();
-              this.message = "Live 数据已刷新：" + new Date().toLocaleTimeString();
+              if (!o.skipDefaultMessage) {
+                this.message = "Live 数据已刷新：" + new Date().toLocaleTimeString();
+              }
             } catch (e) {
-              this.message = "加载失败: " + e.message;
+              if (!o.skipDefaultMessage) this.message = "加载失败: " + e.message;
+              if (o.rethrow) throw e;
             } finally {
-              this.loading = false;
+              if (!skipBoardLoading) this.loading = false;
             }
           },
           async loadTrends() {
+            if (this.actionBusy && !this._apiBypassBusy) return;
             try {
               const path = "/api/sidebar/trends?sort=" + encodeURIComponent(this.trendSortMode);
               const res = await this.apiFetch("GET sidebar/trends", path, {});
@@ -732,6 +775,10 @@
             }
           },
           async refreshTrendsRss() {
+            if (this.actionBusy) {
+              this.message = "当前有贴文操作进行中，请稍候";
+              return;
+            }
             try {
               const res = await this.apiFetch("POST sidebar/trends/refresh", "/api/sidebar/trends/refresh", {
                 method: "POST",
@@ -754,6 +801,10 @@
             }
           },
           async saveSettings() {
+            if (this.actionBusy) {
+              this.message = "当前有贴文操作进行中，请稍候再保存设置";
+              return;
+            }
             try {
               const res = await this.apiFetch("PUT sidebar/settings", "/api/sidebar/settings", {
                 method: "PUT",
@@ -785,14 +836,19 @@
             this.columns = cols;
           },
           openScheduleDialog(item) {
-            const now = new Date();
-            const rounded = this.roundUpDate(now, this.settings.schedule_window_minutes || 10);
+            if (this.mode === "live" && this.actionBusy) {
+              this.message = "当前有贴文操作进行中，请稍候";
+              return;
+            }
+            const step0 = Number(this.settings.schedule_window_minutes || 10);
+            const p0 = this._hktPartsFromInstant(Date.now());
+            const rounded = this._roundUpHktParts(p0, step0);
             this.forms.schedule = {
-              year: rounded.getFullYear(),
-              month: rounded.getMonth() + 1,
-              day: rounded.getDate(),
-              hour: rounded.getHours(),
-              minute: rounded.getMinutes(),
+              year: rounded.year,
+              month: rounded.month,
+              day: rounded.day,
+              hour: rounded.hour,
+              minute: rounded.minute,
             };
             this.dialogs.schedule = { open: true, item: item, error: "" };
             this.refreshScheduleSlots();
@@ -821,32 +877,65 @@
                 : "Mock：排程成功";
               return;
             }
+            const itemId = String(item.item_id || "");
+            const snap = this._cloneRaw();
+            const optId = "opt-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+            const optimistic = {
+              ...item,
+              publish_time: when,
+              post_message: String(item.post_message || item.title || ""),
+              _optimistic: true,
+              _optimisticPhase: "loading",
+              _optTempId: optId,
+            };
+            this.closeDialog("schedule");
+            this._removePendingByItemId(cat, itemId);
+            if (!Array.isArray(this.raw.scheduled)) this.raw.scheduled = [];
+            this.raw.scheduled = [optimistic, ...this.raw.scheduled];
+            this.rebuildColumns();
+            this.actionBusy = true;
+            this.message = "正在呼叫 FB 排程 API（publish）…";
+            this._apiBypassBusy = true;
             try {
               const payload = {
-                item_id: String(item.item_id || ""),
+                item_id: itemId,
                 schedule_time: when,
                 window_minutes: Number(this.settings.schedule_window_minutes || 10),
               };
-              const data = await this.callAction("/api/actions/publish", payload);
+              const data = await this.callAction("/api/actions/publish", payload, { internal: true });
               const include = "scheduled" + (cat ? (",pending:" + cat) : ",pending");
-              await this.fetchColumns(include);
+              this.message = "正在同步已排程与「" + (cat || "全部") + "」已出未排…";
+              await this.fetchColumns(include, { skipBoardLoading: true, skipDefaultMessage: true, rethrow: true });
               const impact = data?.impact_report || {};
               const shifted = Array.isArray(impact.shifted_rows) ? impact.shifted_rows.length : 0;
               const locked = Array.isArray(impact.skipped_locked_rows) ? impact.skipped_locked_rows.length : 0;
-              if (shifted || locked) this.message = `排程成功｜顺延 ${shifted} 篇｜锁定跳过 ${locked} 篇`;
-              this.closeDialog("schedule");
+              let msg = "排程成功｜已刷新 " + new Date().toLocaleTimeString();
+              if (shifted || locked) msg = `排程成功｜顺延 ${shifted} 篇｜锁定跳过 ${locked} 篇｜已刷新 ` + new Date().toLocaleTimeString();
+              this.message = msg;
             } catch (e) {
-              this.dialogs.schedule.error = String(e.message || "排程失败");
+              this._restoreRaw(snap);
+              this.rebuildColumns();
+              this.message = "排程失败：" + String(e.message || e);
+            } finally {
+              this._apiBypassBusy = false;
+              this.actionBusy = false;
+              this.rebuildColumns();
             }
           },
           openUpdateDialog(item) {
-            const base = this.parseToDate(item.publish_time) || new Date();
+            if (this.mode === "live" && this.actionBusy) {
+              this.message = "当前有贴文操作进行中，请稍候";
+              return;
+            }
+            const baseMs = (this.parseToDate(item.publish_time) || new Date()).getTime();
+            const p0 = this._hktPartsFromInstant(baseMs);
+            const step0 = Number(this.settings.schedule_window_minutes || 10);
             this.forms.update = {
-              year: base.getFullYear(),
-              month: base.getMonth() + 1,
-              day: base.getDate(),
-              hour: base.getHours(),
-              minute: this.alignMinute(base.getMinutes(), this.settings.schedule_window_minutes || 10),
+              year: p0.year,
+              month: p0.month,
+              day: p0.day,
+              hour: p0.hour,
+              minute: this.alignMinute(p0.minute, step0),
               post_link_type: String(item.post_link_type || "link"),
               post_message: String(item.post_message || item.title || ""),
               image_url: String(item.image_url || ""),
@@ -895,55 +984,132 @@
                 : "Mock：修改成功";
               return;
             }
+            const idx = this._findScheduledIndex(item);
+            if (idx < 0) {
+              this.dialogs.update.error = "找不到该排程卡片";
+              return;
+            }
+            const snap = this._cloneRaw();
+            const optId = "opt-" + Date.now() + "-u";
+            this.closeDialog("update");
+            const row = this.raw.scheduled[idx];
+            Object.assign(row, {
+              publish_time: when,
+              post_message: pickedMsg,
+              post_link_type: pickedType,
+              image_url: pickedImage,
+              post_mp4_url: pickedMp4,
+              _optimistic: true,
+              _optimisticPhase: "loading",
+              _optTempId: optId,
+            });
+            this.rebuildColumns();
+            this.actionBusy = true;
+            this.message = "正在呼叫 FB 更新排程 API（update）…";
+            this._apiBypassBusy = true;
             try {
-              await this.callAction("/api/actions/update", {
-                post_id: Number(item.post_id || 0),
-                post_link_id: String(item.post_link_id || ""),
-                post_message: pickedMsg,
-                post_link_time: when,
-                post_link_type: pickedType,
-                image_url: pickedImage,
-                post_mp4_url: pickedMp4,
-                enforce_time_validation: true,
-                target_action_key: "plink:" + String(item.post_link_id || ""),
-                window_minutes: Number(this.settings.schedule_window_minutes || 10),
-              });
-              await this.fetchColumns("scheduled");
-              this.closeDialog("update");
+              await this.callAction(
+                "/api/actions/update",
+                {
+                  post_id: Number(item.post_id || 0),
+                  post_link_id: String(item.post_link_id || ""),
+                  post_message: pickedMsg,
+                  post_link_time: when,
+                  post_link_type: pickedType,
+                  image_url: pickedImage,
+                  post_mp4_url: pickedMp4,
+                  enforce_time_validation: true,
+                  target_action_key: "plink:" + String(item.post_link_id || ""),
+                  window_minutes: Number(this.settings.schedule_window_minutes || 10),
+                },
+                { internal: true }
+              );
+              this.message = "正在刷新已排程列…";
+              await this.fetchColumns("scheduled", { skipBoardLoading: true, skipDefaultMessage: true, rethrow: true });
+              this.message = "修改成功｜已排程已更新 " + new Date().toLocaleTimeString();
             } catch (e) {
-              this.dialogs.update.error = String(e.message || "修改失败");
+              this._restoreRaw(snap);
+              this.rebuildColumns();
+              this.message = "修改失败：" + String(e.message || e);
+            } finally {
+              this._apiBypassBusy = false;
+              this.actionBusy = false;
+              this.rebuildColumns();
             }
           },
           openDeleteDialog(item) {
+            if (this.mode === "live" && this.actionBusy) {
+              this.message = "当前有贴文操作进行中，请稍候";
+              return;
+            }
             this.dialogs.delete = { open: true, item: item, error: "" };
           },
           async confirmDelete() {
             const item = this.dialogs.delete.item;
             if (!item) return;
-            const cat = String(item.category || "娛樂");
+            const cat = this._resolveCategoryColumnKey(item);
             if (this.mode === "mock") {
-              this.mockDelete(item, cat);
-              this.rebuildColumns();
               this.closeDialog("delete");
+              this.mockDelete(item, cat);
+              this._ensurePendingCategoryVisible(cat);
+              this.rebuildColumns();
               this.message = "Mock：已返回已出未排";
               return;
             }
+            const postId = Number(item.post_id || 0);
+            const postLinkId = String(item.post_link_id || "");
+            const idx = this._findScheduledIndex(item);
+            if (idx < 0) {
+              this.dialogs.delete.error = "找不到该排程卡片";
+              return;
+            }
+            const snap = this._cloneRaw();
+            const optId = "opt-" + Date.now() + "-d";
+            const prevSelectedCategory = this.selectedCategory;
+            this.closeDialog("delete");
+            this._ensurePendingCategoryVisible(cat);
+            const [removed] = this.raw.scheduled.splice(idx, 1);
+            const pendingRow = {
+              ...removed,
+              review_status: "waiting",
+              post_link_id: "",
+              category: cat,
+              _optimistic: true,
+              _optimisticPhase: "loading",
+              _optTempId: optId,
+            };
+            if (!this.raw.pending_by_category) this.raw.pending_by_category = {};
+            if (!Array.isArray(this.raw.pending_by_category[cat])) this.raw.pending_by_category[cat] = [];
+            this.raw.pending_by_category[cat] = [pendingRow, ...this.raw.pending_by_category[cat]];
+            this.rebuildColumns();
+            this.actionBusy = true;
+            this.message = "正在呼叫 FB 取消排程 API（delete）…";
+            this._apiBypassBusy = true;
             try {
-              await this.callAction("/api/actions/delete", {
-                post_id: Number(item.post_id || 0),
-                post_link_id: String(item.post_link_id || ""),
-              });
+              await this.callAction("/api/actions/delete", { post_id: postId, post_link_id: postLinkId }, { internal: true });
               const include = "scheduled" + (cat ? (",pending:" + cat) : ",pending");
-              await this.fetchColumns(include);
-              this.closeDialog("delete");
+              this.message = "正在同步已排程与「" + cat + "」已出未排…";
+              await this.fetchColumns(include, { skipBoardLoading: true, skipDefaultMessage: true, rethrow: true });
+              this.message = "取消排程成功｜已刷新 " + new Date().toLocaleTimeString();
             } catch (e) {
-              this.dialogs.delete.error = String(e.message || "删除失败");
+              this._restoreRaw(snap);
+              this.selectedCategory = prevSelectedCategory;
+              this.rebuildColumns();
+              this.message = "取消排程失败：" + String(e.message || e);
+            } finally {
+              this._apiBypassBusy = false;
+              this.actionBusy = false;
+              this.rebuildColumns();
             }
           },
           closeDialog(kind) {
             this.dialogs[kind] = { open: false, item: null, error: "" };
           },
           async toggleLock(item) {
+            if (this.mode === "live" && this.actionBusy) {
+              this.message = "当前有贴文操作进行中，请稍候";
+              return;
+            }
             if (this.mode === "mock") {
               item.is_locked = !item.is_locked;
               this.rebuildColumns();
@@ -954,8 +1120,10 @@
             await this.callAction("/api/actions/toggle-lock", { action_key: key });
             await this.fetchColumns("scheduled");
           },
-          async callAction(url, payload) {
-            this.loading = true;
+          async callAction(url, payload, opts) {
+            const o = opts || {};
+            const internal = o.internal === true;
+            if (!internal) this.loading = true;
             try {
               let kind = "POST action";
               if (url.includes("/publish")) kind = "POST actions/publish";
@@ -969,20 +1137,62 @@
               });
               const data = await res.json().catch(() => ({}));
               if (!res.ok) throw new Error(data.detail || data.message || "action failed");
-              this.message = "操作成功：" + (data.message || "ok");
+              if (!internal) this.message = "操作成功：" + (data.message || "ok");
               return data;
             } catch (e) {
-              this.message = "操作失败：" + e.message;
+              if (!internal) this.message = "操作失败：" + e.message;
               throw e;
             } finally {
-              this.loading = false;
+              if (!internal) this.loading = false;
+            }
+          },
+          _cloneRaw() {
+            return this.raw ? JSON.parse(JSON.stringify(this.raw)) : null;
+          },
+          _restoreRaw(snap) {
+            if (snap) this.raw = snap;
+          },
+          _filterPendingOneCategory(cat, itemId) {
+            if (!this.raw || !this.raw.pending_by_category) return;
+            const arr = this.raw.pending_by_category[cat];
+            if (!Array.isArray(arr)) return;
+            this.raw.pending_by_category[cat] = arr.filter((x) => String(x.item_id) !== String(itemId));
+          },
+          _removePendingByItemId(cat, itemId) {
+            if (!cat) {
+              this.categoryOrder.forEach((k) => this._filterPendingOneCategory(k, itemId));
+              return;
+            }
+            this._filterPendingOneCategory(cat, itemId);
+          },
+          _findScheduledIndex(item) {
+            const arr = this.raw?.scheduled || [];
+            const pl = String(item.post_link_id || "");
+            const iid = String(item.item_id || "");
+            return arr.findIndex(
+              (r) =>
+                (pl && String(r.post_link_id || "") === pl) ||
+                (iid && String(r.item_id || "") === iid) ||
+                (iid && String(r.post_id || "") === iid)
+            );
+          },
+          /** 已出未排列键须落在 categoryOrder 内，否则 rebuildColumns 不会渲染对应列 */
+          _resolveCategoryColumnKey(item) {
+            const c = String(item?.category || "").trim();
+            if (this.categoryOrder.includes(c)) return c;
+            return "娛樂";
+          },
+          /** 侧栏单分类筛选时，若目标贴文落在另一分类列，该列会被置空；乐观 UI 前切到该分类以便看到卡片 */
+          _ensurePendingCategoryVisible(cat) {
+            if (this.selectedCategory !== "ALL" && this.selectedCategory !== cat) {
+              this.selectedCategory = cat;
             }
           },
           windowHintText() {
             const step = Number(this.settings.schedule_window_minutes || 10);
             const mins = [];
             for (let m = 0; m < 60; m += step) mins.push(String(m).padStart(2, "0"));
-            return `时间粒度：${step} 分钟（仅 ${mins.join("/")}）`;
+            return `时间粒度：${step} 分钟（仅 ${mins.join("/")}）｜均为香港时间 HKT（UTC+8）`;
           },
           yearOptions(baseYear) {
             const y = Number(baseYear || new Date().getFullYear());
@@ -1003,6 +1213,58 @@
             if (r !== 0) d.setMinutes(d.getMinutes() + (s - r));
             return d;
           },
+          _hktPartsFromInstant(ms) {
+            const fmt = new Intl.DateTimeFormat("en-CA", {
+              timeZone: "Asia/Hong_Kong",
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: false,
+            });
+            const parts = fmt.formatToParts(new Date(ms));
+            const map = {};
+            for (const x of parts) {
+              if (x.type !== "literal") map[x.type] = x.value;
+            }
+            return {
+              year: Number(map.year),
+              month: Number(map.month),
+              day: Number(map.day),
+              hour: Number(map.hour),
+              minute: Number(map.minute),
+            };
+          },
+          _roundUpHktParts(p, step) {
+            let y = p.year,
+              mo = p.month,
+              d = p.day,
+              h = p.hour,
+              min = p.minute;
+            const s = Number(step || 10);
+            let r = min % s;
+            if (r !== 0) min += s - r;
+            while (min >= 60) {
+              min -= 60;
+              h += 1;
+            }
+            while (h >= 24) {
+              h -= 24;
+              const noonUtcMs = Date.UTC(y, mo - 1, d, 12 - 8, 0, 0, 0) + 86400000;
+              const np = this._hktPartsFromInstant(noonUtcMs);
+              y = np.year;
+              mo = np.month;
+              d = np.day;
+            }
+            return { year: y, month: mo, day: d, hour: h, minute: min };
+          },
+          parseHktWallTimeToDate(raw) {
+            const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(String(raw || "").trim());
+            if (!m) return null;
+            const utcMs = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]) - 8, Number(m[5]), 0, 0);
+            return new Date(utcMs);
+          },
           alignMinute(minute, step) {
             const s = Number(step || 10);
             return Math.floor(Number(minute || 0) / s) * s;
@@ -1012,6 +1274,22 @@
             const d = new Date(raw);
             return Number.isNaN(d.getTime()) ? null : d;
           },
+          /** 卡片/对话框展示：将 API 存盘的 UTC/ISO 时间格式化为香港时间（与修改弹窗内 HKT 逻辑一致） */
+          formatDisplayTimeHkt(raw) {
+            if (!raw) return "";
+            const dt = this.parseToDate(raw);
+            if (!dt) return String(raw);
+            const fmt = new Intl.DateTimeFormat("en-CA", {
+              timeZone: "Asia/Hong_Kong",
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: false,
+            });
+            return fmt.format(dt) + " HKT";
+          },
           buildTimeString(form) {
             const y = Number(form.year), m = Number(form.month), d = Number(form.day);
             const hh = Number(form.hour), mm = Number(form.minute);
@@ -1020,12 +1298,15 @@
           },
           calcSlotsByDate(form, enforceFuture) {
             const step = Number(this.settings.schedule_window_minutes || 10);
-            const now = new Date();
+            const nowMs = Date.now();
+            const y = Number(form.year),
+              mo = Number(form.month),
+              d = Number(form.day);
             const slots = [];
             for (let h = 0; h < 24; h++) {
               for (let m = 0; m < 60; m += step) {
-                const d = new Date(Number(form.year), Number(form.month) - 1, Number(form.day), h, m, 0, 0);
-                if (!enforceFuture || d > now) slots.push({ h, m });
+                const utcMs = Date.UTC(y, mo - 1, d, h - 8, m, 0, 0);
+                if (!enforceFuture || utcMs > nowMs) slots.push({ h, m });
               }
             }
             if (!slots.length) {
@@ -1057,6 +1338,7 @@
               return;
             }
             this.pollTimer = window.setInterval(() => {
+              if (this.actionBusy) return;
               this.reloadAll();
             }, 20000);
           },
@@ -1081,23 +1363,26 @@
               return "";
             }
           },
+          slotKeyFromInstant(ms) {
+            const p = this._hktPartsFromInstant(ms);
+            return `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")} ${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
+          },
           slotKeyFromDate(dt) {
-            return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")} ${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
+            if (!dt || Number.isNaN(dt.getTime())) return "";
+            return this.slotKeyFromInstant(dt.getTime());
           },
           addMinutes(dt, mins) {
             return new Date(dt.getTime() + Number(mins || 0) * 60000);
           },
           parseLocalInputTime(raw) {
-            const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(String(raw || "").trim());
-            if (!m) return null;
-            return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), 0, 0);
+            return this.parseHktWallTimeToDate(raw);
           },
           formatLocalInputTime(dt) {
-            return `${String(dt.getFullYear()).padStart(4, "0")}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}T${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
+            return new Date(dt.getTime()).toISOString();
           },
           mockPublishWithRules(item, when) {
             const step = Number(this.settings.schedule_window_minutes || 10);
-            const targetDt = this.parseLocalInputTime(when);
+            const targetDt = this.parseHktWallTimeToDate(when);
             if (!targetDt) return { ok: false, message: "时间格式错误" };
             if ((targetDt.getMinutes() % step) !== 0) return { ok: false, message: `时间必须符合 ${step} 分钟窗口` };
             if (targetDt <= new Date()) return { ok: false, message: "不能排到过去时间" };
@@ -1107,7 +1392,7 @@
             for (const row of scheduled) {
               const dt = this.parseToDate(row.publish_time) || this.parseLocalInputTime(String(row.publish_time || ""));
               if (!dt) continue;
-              const key = this.slotKeyFromDate(new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), dt.getHours(), dt.getMinutes(), 0, 0));
+              const key = this.slotKeyFromDate(dt);
               if (!bySlot.has(key)) bySlot.set(key, []);
               bySlot.get(key).push(row);
             }
@@ -1169,7 +1454,7 @@
           },
           mockValidateUpdateSlot(item, when) {
             const step = Number(this.settings.schedule_window_minutes || 10);
-            const picked = this.parseLocalInputTime(when);
+            const picked = this.parseHktWallTimeToDate(when);
             if (!picked) return { ok: false, message: "时间格式错误" };
             if ((picked.getMinutes() % step) !== 0) return { ok: false, message: `时间必须符合 ${step} 分钟窗口` };
             if (picked <= new Date()) return { ok: false, message: "不能设置过去时间" };
@@ -1180,7 +1465,7 @@
               if (rowKey === selfKey) continue;
               const dt = this.parseToDate(row.publish_time) || this.parseLocalInputTime(String(row.publish_time || ""));
               if (!dt) continue;
-              const slotKey = this.slotKeyFromDate(new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), dt.getHours(), dt.getMinutes(), 0, 0));
+              const slotKey = this.slotKeyFromDate(dt);
               if (slotKey === pickedKey && Boolean(row.is_locked)) {
                 return { ok: false, message: "该时间窗口已锁定，不能修改到这个时间" };
               }
@@ -1191,7 +1476,7 @@
             const valid = this.mockValidateUpdateSlot(item, when);
             if (!valid.ok) return valid;
             const step = Number(this.settings.schedule_window_minutes || 10);
-            const targetDt = this.parseLocalInputTime(when);
+            const targetDt = this.parseHktWallTimeToDate(when);
             if (!targetDt) return { ok: false, message: "时间格式错误" };
 
             const selfKey = "plink:" + String(item.post_link_id || "");
@@ -1204,7 +1489,7 @@
             for (const row of baseScheduled) {
               const dt = this.parseToDate(row.publish_time) || this.parseLocalInputTime(String(row.publish_time || ""));
               if (!dt) continue;
-              const key = this.slotKeyFromDate(new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), dt.getHours(), dt.getMinutes(), 0, 0));
+              const key = this.slotKeyFromDate(dt);
               if (!bySlot.has(key)) bySlot.set(key, []);
               bySlot.get(key).push(row);
             }
@@ -1254,8 +1539,19 @@
           },
           mockDelete(item, cat) {
             this.raw.scheduled = this.raw.scheduled.filter((x) => String(x.post_link_id || "") !== String(item.post_link_id || ""));
-            if (!this.raw.pending_by_category[cat]) this.raw.pending_by_category[cat] = [];
-            this.raw.pending_by_category[cat].unshift({ ...item });
+            if (!this.raw.pending_by_category) this.raw.pending_by_category = {};
+            if (!Array.isArray(this.raw.pending_by_category[cat])) this.raw.pending_by_category[cat] = [];
+            const optId = "opt-" + Date.now() + "-d-m";
+            const row = {
+              ...item,
+              category: cat,
+              review_status: "waiting",
+              post_link_id: "",
+              _optimistic: true,
+              _optimisticPhase: "loading",
+              _optTempId: optId,
+            };
+            this.raw.pending_by_category[cat] = [row, ...this.raw.pending_by_category[cat]];
           },
           buildMockPayload() {
             const now = new Date();

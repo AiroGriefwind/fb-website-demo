@@ -1326,3 +1326,20 @@
 下一步:
 - 按需将 CMS 写操作纳入 `cms_upstream_calls` 或独立 `last_action_trace`。
 - 若需减轻负载，可为 `GET /api/board/columns` 增加跳过同步或合并轮询策略。
+
+日期时间(HKT): 2026-04-08
+负责人/LLM: wangz / Composer
+分支/worktree: feature/bot-ui-ops（本仓库）
+完成内容:
+- [本仓库] 独立看板 `frontend/board/index.html`：已發佈 / 已排程 / 已出未排卡片 `publish_time` 不再直接展示 API 存盘的 UTC ISO 字符串；新增 `formatDisplayTimeHkt`，以 `parseToDate` + `Intl.DateTimeFormat(..., timeZone: "Asia/Hong_Kong")` 格式化为 `YYYY-MM-DD HH:mm HKT`，与「修改贴文」弹窗内 HKT 语义一致；「确认删除排程」对话框中「当前排程」同步使用该展示。
+- [本仓库] 「返回已出未排」乐观 UI 与「已出未排 → 排程」对齐：先 `closeDialog` 再写入乐观行；新增 `_resolveCategoryColumnKey`（分类须落在 `categoryOrder` 内，否则回退 `娛樂`）；新增 `_ensurePendingCategoryVisible`——侧栏为单分类筛选时，若目标贴文落在另一分类的已出未排，原先 `rebuildColumns` 会把非当前分类列置 `items: []`，导致看不到乐观卡片，故在插入前自动将 `selectedCategory` 切到目标分类；Live 取消排程 API 失败时除 `_restoreRaw` 外恢复此前的 `selectedCategory`。
+- [本仓库] Mock `mockDelete`：与 Live 一致为回到 pending 的卡片打上 `_optimistic` / `_optTempId`、清空 `post_link_id`，并先 `closeDialog` 再 `mockDelete` + `_ensurePendingCategoryVisible`。
+
+验证结果:
+- 前端为纯展示与状态机调整；侧栏筛选在「全部」与「单分类」下手动点「返回已出未排」可看到灰化乐观卡片出现在对应已出未排列顶部。
+
+风险/阻塞:
+- 未知分类名经 `_resolveCategoryColumnKey` 暂统一归入 `娛樂`；若 CMS 出现第七列外新分类，需同步扩展 `categoryOrder` 或映射表。
+
+下一步:
+- 视需要为「自动切换侧栏分类」增加轻提示（避免用户误以为筛选被重置）；评估已發佈列时间是否也需统一为「仅日期」等展示策略。
