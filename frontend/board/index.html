@@ -33,10 +33,24 @@
         overflow-x: visible;
       }
       .layout.sidebar-collapsed .sidebar-content { display: none; }
+      .sidebar-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+      .sidebar-head .collapse-toggle {
+        margin-left: auto;
+      }
+      .layout.sidebar-collapsed .sidebar-head {
+        justify-content: center;
+        margin-bottom: 0;
+      }
+      .layout.sidebar-collapsed .sidebar-head .collapse-toggle {
+        margin-left: 0;
+      }
       .collapse-toggle {
-        position: absolute;
-        right: -12px;
-        top: 12px;
+        flex-shrink: 0;
         width: 24px;
         height: 24px;
         border-radius: 999px;
@@ -45,9 +59,31 @@
         color: #334;
         cursor: pointer;
         font-size: 14px;
-        z-index: 12;
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
       }
-      .side-title { font-size: 16px; font-weight: 700; margin: 0 0 10px; }
+      .side-title { font-size: 16px; font-weight: 700; margin: 0; flex: 1; min-width: 0; }
+      .settings-toggle {
+        width: 100%;
+        text-align: left;
+        padding: 8px 10px;
+        border: 0;
+        background: rgba(240, 244, 255, 0.65);
+        font: inherit;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--ink);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border-radius: 8px;
+        margin: -2px -2px 8px -2px;
+      }
+      .settings-toggle:hover { background: rgba(230, 236, 252, 0.95); }
       .side-block { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 10px; background: #fff; }
       .side-sub { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
       .chip-row { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -73,15 +109,205 @@
       }
       .btn.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
       .btn.tiny { padding: 4px 8px; font-size: 11px; }
+      .btn-icon-emoji {
+        min-width: 2.5rem;
+        font-size: 16px;
+        line-height: 1.2;
+        padding: 6px 8px;
+        font-family: system-ui, "Segoe UI", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif;
+      }
       .field { width: 100%; border: 1px solid #ccd6ef; border-radius: 8px; padding: 6px 8px; font-size: 12px; margin-bottom: 8px; }
       .msg { padding: 8px 2px 0; font-size: 13px; color: #2f3f6b; }
       .loading { opacity: 0.7; pointer-events: none; }
-      .board-wrap { overflow-x: auto; padding: 12px; }
-      .board { display: grid; grid-template-columns: repeat(9, var(--col-width)); gap: var(--col-gap); min-width: 2440px; }
-      .col { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; min-height: 520px; position: relative; }
-      .col.sticky-1 { position: sticky; left: 0; z-index: 5; box-shadow: 6px 0 10px rgba(36, 49, 88, 0.06); }
-      .col.sticky-2 { position: sticky; left: calc(var(--col-width) + var(--col-gap)); z-index: 5; box-shadow: 6px 0 10px rgba(36, 49, 88, 0.04); }
-      .col .title { border-bottom: 1px solid #edf1fb; padding: 8px 10px; font-weight: 700; font-size: 14px; background: #fff; border-radius: 10px 10px 0 0; }
+      .board-wrap { padding: 12px; }
+      .board-shell {
+        display: grid;
+        grid-template-columns: 44px minmax(0, 1fr);
+        gap: 8px;
+        align-items: start;
+      }
+      .board-controls {
+        position: sticky;
+        left: 0;
+        top: 0;
+        z-index: 95;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .board-control-btn {
+        position: relative;
+        height: 40px;
+        width: 40px;
+        border-radius: 10px;
+        border: 1px solid #d7d9f2;
+        background: rgba(248, 249, 255, 0.96);
+        color: #4e4ea8;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        user-select: none;
+        font-size: 18px;
+        line-height: 1;
+        padding: 0;
+        transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease, opacity 0.12s ease;
+        font-family: system-ui, "Segoe UI", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif;
+      }
+      .board-control-btn:hover {
+        transform: translateY(-1px);
+        border-color: #8a8ade;
+        box-shadow: 0 4px 12px rgba(66, 66, 140, 0.18);
+      }
+      .board-control-btn.dimmed {
+        opacity: 0.62;
+        border-color: #8a8ade;
+      }
+      .board-control-btn::after {
+        content: attr(data-hint);
+        position: absolute;
+        left: 46px;
+        background: rgba(24, 26, 38, 0.88);
+        color: #f2f4ff;
+        font-size: 11px;
+        border-radius: 6px;
+        padding: 2px 6px;
+        white-space: nowrap;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.1s ease;
+        z-index: 2;
+      }
+      @media (hover: hover) and (pointer: fine) {
+        .board-control-btn:hover::after {
+          opacity: 1;
+        }
+      }
+      @media (hover: none), (pointer: coarse) {
+        .board-control-btn::after {
+          display: none;
+        }
+      }
+      .board-scroll {
+        overflow-x: auto;
+        min-width: 0;
+      }
+      .board {
+        --c1: var(--col-width);
+        --c2: var(--col-width);
+        --board-g: var(--col-gap);
+        display: grid;
+        grid-template-columns: var(--c1) var(--c2) repeat(7, var(--col-width));
+        gap: var(--board-g);
+        min-width: calc(var(--c1) + var(--c2) + 7 * var(--col-width) + 8 * var(--board-g));
+      }
+      .board.hide-col-published {
+        --c1: 0px;
+      }
+      .board.hide-col-scheduled {
+        --c2: 0px;
+      }
+      .col {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        min-height: 520px;
+        position: relative;
+        transition: opacity 0.24s ease, transform 0.24s ease, filter 0.24s ease;
+      }
+      .col.sticky-1 {
+        position: sticky;
+        left: 0;
+        z-index: 5;
+        box-shadow: 6px 0 10px rgba(36, 49, 88, 0.06);
+      }
+      .col.sticky-2 {
+        position: sticky;
+        left: calc(var(--c1) + var(--board-g));
+        z-index: 5;
+        box-shadow: 6px 0 10px rgba(36, 49, 88, 0.04);
+      }
+      .board.hide-col-published .col.sticky-2 {
+        left: 0;
+      }
+      .board.hide-col-published .col.sticky-1 {
+        opacity: 0;
+        transform: translateX(-12px);
+        filter: blur(1px);
+        pointer-events: none;
+        overflow: hidden;
+        border-color: transparent;
+      }
+      .board.hide-col-published .col.sticky-1 .title,
+      .board.hide-col-published .col.sticky-1 .stack {
+        visibility: hidden;
+      }
+      .board.hide-col-scheduled .col.sticky-2 {
+        opacity: 0;
+        transform: translateX(-12px);
+        filter: blur(1px);
+        pointer-events: none;
+        overflow: hidden;
+        border-color: transparent;
+      }
+      .board.hide-col-scheduled .col.sticky-2 .title,
+      .board.hide-col-scheduled .col.sticky-2 .stack {
+        visibility: hidden;
+      }
+      .col .title {
+        border-bottom: 1px solid #edf1fb;
+        padding: 8px 10px;
+        font-weight: 700;
+        font-size: 14px;
+        background: #fff;
+        border-radius: 10px 10px 0 0;
+      }
+      .col-head-toggle {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+        border: 0;
+        background: transparent;
+        font: inherit;
+        font-weight: 700;
+        font-size: 14px;
+        cursor: pointer;
+        text-align: left;
+        padding: 0;
+        color: inherit;
+      }
+      .col-head-toggle:hover {
+        color: #2e5bff;
+      }
+      .col-head-main {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+      }
+      .col-head-icon {
+        flex-shrink: 0;
+        font-size: 16px;
+        line-height: 1;
+        font-family: system-ui, "Segoe UI", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif;
+      }
+      .col-head-title {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .col-head-hint {
+        flex-shrink: 0;
+        font-size: 11px;
+        font-weight: 600;
+        color: #8a8ade;
+      }
+      .board.hide-col-published .col.sticky-1 .col-head-hint,
+      .board.hide-col-scheduled .col.sticky-2 .col-head-hint {
+        color: #4e4ea8;
+      }
       .stack { padding: 8px; display: flex; flex-direction: column; gap: 8px; }
       .card { border: 1px solid #dce4f8; border-radius: 8px; background: #fbfcff; padding: 8px; position: relative; }
       .card.card-optimistic {
@@ -280,21 +506,18 @@
   <body x-data="boardApp()" x-init="init()">
     <div class="layout" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
       <aside class="sidebar">
-        <button class="collapse-toggle" @click="sidebarCollapsed = !sidebarCollapsed" :title="sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'">
-          <span x-text="sidebarCollapsed ? '›' : '‹'"></span>
-        </button>
+        <div class="sidebar-head">
+          <h2 class="side-title" x-show="!sidebarCollapsed">看板侧边栏</h2>
+          <button
+            type="button"
+            class="collapse-toggle"
+            @click="sidebarCollapsed = !sidebarCollapsed"
+            :title="sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
+          >
+            <span x-text="sidebarCollapsed ? '›' : '‹'"></span>
+          </button>
+        </div>
         <div class="sidebar-content">
-          <h2 class="side-title">看板侧边栏</h2>
-
-          <div class="side-block">
-            <div class="side-sub">数据模式</div>
-            <div class="chip-row">
-              <button class="chip" :class="{ active: mode === 'mock' }" @click="switchMode('mock')" :disabled="actionBusy">Mock</button>
-              <button class="chip" :class="{ active: mode === 'live' }" @click="switchMode('live')" :disabled="actionBusy">Live API</button>
-            </div>
-            <div class="tiny" style="margin-top:8px;">Mock 下动作只改前端本地数据，便于调 UI。</div>
-          </div>
-
           <div class="side-block">
             <div class="side-sub">栏目筛选</div>
             <div class="chip-row">
@@ -368,20 +591,32 @@
           </div>
 
           <div class="side-block">
-            <div class="side-sub">设置</div>
-            <label class="tiny">排程窗口（分钟）</label>
-            <select class="field" x-model.number="settings.schedule_window_minutes">
-              <option value="5">5</option>
-              <option value="10">10</option>
-              <option value="15">15</option>
-              <option value="20">20</option>
-              <option value="30">30</option>
-            </select>
-            <label class="tiny"><input type="checkbox" x-model="settings.enable_category_alias_mode" /> 启用分类归一化</label>
-            <label class="tiny" style="display:block; margin-top:6px;"><input type="checkbox" x-model="settings.enable_board_fallback_mode" /> 启用看板渲染兜底</label>
-            <label class="tiny" style="display:block; margin-top:8px;">测试 Fan Page ID</label>
-            <input class="field" type="text" x-model="settings.target_fan_page_id" />
-            <button class="btn primary" @click="saveSettings()" :disabled="loading || actionBusy">保存设置</button>
+            <button type="button" class="settings-toggle" @click="settingsOpen = !settingsOpen">
+              <span x-text="settingsOpen ? '▼' : '▶'"></span>
+              <span>设置</span>
+            </button>
+            <div x-show="settingsOpen" x-cloak>
+              <div class="side-sub">数据模式</div>
+              <div class="chip-row">
+                <button class="chip" :class="{ active: mode === 'mock' }" @click="switchMode('mock')" :disabled="actionBusy">Mock</button>
+                <button class="chip" :class="{ active: mode === 'live' }" @click="switchMode('live')" :disabled="actionBusy">Live API</button>
+              </div>
+              <div class="tiny" style="margin-top:8px;">Mock 下动作只改前端本地数据，便于调 UI。</div>
+              <div class="side-sub" style="margin-top:12px;">排程与同步</div>
+              <label class="tiny">排程窗口（分钟）</label>
+              <select class="field" x-model.number="settings.schedule_window_minutes">
+                <option value="5">5</option>
+                <option value="10">10</option>
+                <option value="15">15</option>
+                <option value="20">20</option>
+                <option value="30">30</option>
+              </select>
+              <label class="tiny"><input type="checkbox" x-model="settings.enable_category_alias_mode" /> 启用分类归一化</label>
+              <label class="tiny" style="display:block; margin-top:6px;"><input type="checkbox" x-model="settings.enable_board_fallback_mode" /> 启用看板渲染兜底</label>
+              <label class="tiny" style="display:block; margin-top:8px;">测试 Fan Page ID</label>
+              <input class="field" type="text" x-model="settings.target_fan_page_id" />
+              <button class="btn primary" @click="saveSettings()" :disabled="loading || actionBusy">保存设置</button>
+            </div>
           </div>
         </div>
       </aside>
@@ -390,9 +625,6 @@
         <div class="header">
           <div class="row">
             <button class="btn primary" @click="reloadAll" :disabled="loading || actionBusy">刷新全部</button>
-            <button class="btn" @click="toggleAutoPoll" :disabled="actionBusy">
-              <span x-text="autoPoll ? '停止自动刷新(20s)' : '开启自动刷新(20s)'"></span>
-            </button>
             <span class="tiny">模式：<strong x-text="mode.toUpperCase()"></strong></span>
           </div>
           <div class="msg" x-text="message"></div>
@@ -423,37 +655,135 @@
         </div>
 
         <div class="board-wrap" :class="{ loading: loading }">
-          <div class="board">
-            <template x-for="(col, idx) in columns" :key="col.id">
-              <div class="col" :class="{ 'sticky-1': idx === 0, 'sticky-2': idx === 1 }">
-                <div class="title" x-text="col.title"></div>
-                <div class="stack">
-                  <template x-if="(col.items || []).length === 0">
-                    <div class="empty">暂无数据</div>
-                  </template>
-                  <template x-for="item in col.items" :key="item._optTempId || item.post_link_id || item.item_id || item.title">
-                    <div class="card" :class="{ 'card-optimistic': item._optimistic }">
-                      <div class="optimistic-badge" :class="{ err: item._optimisticPhase === 'error' }" x-show="item._optimistic" x-text="item._optimisticPhase === 'error' ? (item._optimisticErr || '失败') : 'loading…'"></div>
-                      <img class="thumb" :src="resolveThumb(item)" @error="onThumbError($event)" alt="thumbnail" />
-                      <div class="meta" x-text="formatDisplayTimeHkt(item.publish_time)"></div>
-                      <div class="title-text" x-text="item.title || 'N/A'"></div>
-                      <div class="actions">
-                        <template x-if="col.kind === 'pending'">
-                          <button class="btn" @click="openScheduleDialog(item)" :disabled="loading || actionBusy">排程</button>
-                        </template>
-                        <template x-if="col.kind === 'scheduled'">
-                          <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                            <button class="btn" @click="openUpdateDialog(item)" :disabled="loading || actionBusy">修改</button>
-                            <button class="btn" @click="openDeleteDialog(item)" :disabled="loading || actionBusy">返回已出未排</button>
-                            <button class="btn" @click="toggleLock(item)" :disabled="loading || actionBusy" x-text="item.is_locked ? '解锁' : '锁定'"></button>
-                          </div>
-                        </template>
-                      </div>
+          <div class="board-shell">
+            <div class="board-controls">
+              <button
+                type="button"
+                class="board-control-btn"
+                :class="{ dimmed: hideColPublished }"
+                data-hint="已發佈 <<<"
+                title="显示/隐藏 已發佈 列"
+                aria-label="显示或隐藏已發佈列"
+                @click="hideColPublished = !hideColPublished"
+              >
+                📰
+              </button>
+              <button
+                type="button"
+                class="board-control-btn"
+                :class="{ dimmed: hideColScheduled }"
+                data-hint="已排程 <<<"
+                title="显示/隐藏 已排程 列"
+                aria-label="显示或隐藏已排程列"
+                @click="hideColScheduled = !hideColScheduled"
+              >
+                📅
+              </button>
+            </div>
+            <div class="board-scroll">
+              <div
+                class="board"
+                :class="{ 'hide-col-published': hideColPublished, 'hide-col-scheduled': hideColScheduled }"
+              >
+                <template x-for="(col, idx) in columns" :key="col.id">
+                  <div class="col" :class="{ 'sticky-1': idx === 0, 'sticky-2': idx === 1 }">
+                    <div class="title">
+                      <template x-if="idx === 0">
+                        <button
+                          type="button"
+                          class="col-head-toggle"
+                          title="点击隐藏/显示本列"
+                          @click="hideColPublished = !hideColPublished"
+                        >
+                          <span class="col-head-main">
+                            <span class="col-head-icon" aria-hidden="true">📰</span>
+                            <span class="col-head-title" x-text="col.title"></span>
+                          </span>
+                          <span class="col-head-hint">&lt;&lt;&lt;</span>
+                        </button>
+                      </template>
+                      <template x-if="idx === 1">
+                        <button
+                          type="button"
+                          class="col-head-toggle"
+                          title="点击隐藏/显示本列"
+                          @click="hideColScheduled = !hideColScheduled"
+                        >
+                          <span class="col-head-main">
+                            <span class="col-head-icon" aria-hidden="true">📅</span>
+                            <span class="col-head-title" x-text="col.title"></span>
+                          </span>
+                          <span class="col-head-hint">&lt;&lt;&lt;</span>
+                        </button>
+                      </template>
+                      <template x-if="idx > 1">
+                        <span x-text="col.title"></span>
+                      </template>
                     </div>
-                  </template>
-                </div>
+                    <div class="stack">
+                      <template x-if="(col.items || []).length === 0">
+                        <div class="empty">暂无数据</div>
+                      </template>
+                      <template x-for="item in col.items" :key="item._optTempId || item.post_link_id || item.item_id || item.title">
+                        <div class="card" :class="{ 'card-optimistic': item._optimistic }">
+                          <div class="optimistic-badge" :class="{ err: item._optimisticPhase === 'error' }" x-show="item._optimistic" x-text="item._optimisticPhase === 'error' ? (item._optimisticErr || '失败') : 'loading…'"></div>
+                          <img class="thumb" :src="resolveThumb(item)" @error="onThumbError($event)" alt="thumbnail" />
+                          <div class="meta" x-text="formatDisplayTimeHkt(item.publish_time)"></div>
+                          <div class="title-text" x-text="item.title || 'N/A'"></div>
+                          <div class="actions">
+                            <template x-if="col.kind === 'pending'">
+                              <button
+                                type="button"
+                                class="btn btn-icon-emoji"
+                                title="加入排程"
+                                aria-label="加入排程"
+                                @click="openScheduleDialog(item)"
+                                :disabled="loading || actionBusy"
+                              >
+                                📅
+                              </button>
+                            </template>
+                            <template x-if="col.kind === 'scheduled'">
+                              <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                                <button
+                                  type="button"
+                                  class="btn btn-icon-emoji"
+                                  title="修改貼文"
+                                  aria-label="修改貼文"
+                                  @click="openUpdateDialog(item)"
+                                  :disabled="loading || actionBusy"
+                                >
+                                  ✏️
+                                </button>
+                                <button
+                                  type="button"
+                                  class="btn btn-icon-emoji"
+                                  title="取消排程并返回已出未排"
+                                  aria-label="取消排程并返回已出未排"
+                                  @click="openDeleteDialog(item)"
+                                  :disabled="loading || actionBusy"
+                                >
+                                  🔙
+                                </button>
+                                <button
+                                  type="button"
+                                  class="btn btn-icon-emoji"
+                                  :title="item.is_locked ? '解锁' : '锁定'"
+                                  :aria-label="item.is_locked ? '解锁' : '锁定'"
+                                  @click="toggleLock(item)"
+                                  :disabled="loading || actionBusy"
+                                  x-text="item.is_locked ? '🔓' : '🔒'"
+                                ></button>
+                              </div>
+                            </template>
+                          </div>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </template>
               </div>
-            </template>
+            </div>
           </div>
         </div>
 
@@ -551,10 +881,11 @@
           loading: false,
           actionBusy: false,
           _apiBypassBusy: false,
-          autoPoll: false,
-          pollTimer: null,
           sidebarCollapsed: false,
-          mode: "mock",
+          settingsOpen: false,
+          hideColPublished: false,
+          hideColScheduled: false,
+          mode: "live",
           selectedCategory: "ALL",
           message: "准备就绪",
           raw: null,
@@ -1329,18 +1660,6 @@
             const minutes = slots.filter((x) => x.h === Number(this.forms.update.hour)).map((x) => x.m);
             if (!minutes.includes(Number(this.forms.update.minute))) this.forms.update.minute = minutes[0];
             this.updateSlots = { hours, minutes };
-          },
-          toggleAutoPoll() {
-            this.autoPoll = !this.autoPoll;
-            if (!this.autoPoll) {
-              if (this.pollTimer) window.clearInterval(this.pollTimer);
-              this.pollTimer = null;
-              return;
-            }
-            this.pollTimer = window.setInterval(() => {
-              if (this.actionBusy) return;
-              this.reloadAll();
-            }, 20000);
           },
           resolveThumb(item) {
             return item.thumbnail || item.image_url || this.dummyThumb;

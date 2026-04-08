@@ -1343,3 +1343,20 @@
 
 下一步:
 - 视需要为「自动切换侧栏分类」增加轻提示（避免用户误以为筛选被重置）；评估已發佈列时间是否也需统一为「仅日期」等展示策略。
+
+日期时间(HKT): 2026-04-08（续）
+负责人/LLM: wangz / Composer
+分支/worktree: feature/bot-ui-ops（本仓库）
+完成内容:
+- [本仓库] 独立看板侧栏 `frontend/board/index.html`：**数据模式**（Mock / Live API）并入可折叠 **「设置」** 区块，默认 **折叠**；**默认数据模式为 Live API**；移除「开启/停止自动刷新(20s)」及 `setInterval` 轮询，主区仅保留手动 **「刷新全部」**；**折叠侧栏按钮**与标题同排、`margin-left: auto`，右缘与下方 `side-block` 对齐（收起态仍保留窄条上的展开键，`sidebar-head` 置于 `sidebar-content` 外）。
+- [本仓库] 与 Streamlit `board_view.py` 对齐的交互与符号：**排程** 📅、**修改** ✏️、**返回已出未排** 🔙；锁定 **🔒 / 🔓**；按钮使用 `title` / `aria-label`（中文）+ `.btn-icon-emoji` 系统 emoji 字体栈，无外链图标依赖，便于 Docker/内网 URL 部署。
+- [本仓库] 恢复前两列 **已發佈 / 已排程** 的「隐藏冻结列」能力：`board-shell` 左侧 **📰 / 📅** 控制条（悬停 `data-hint`）、列头可点 **图标 + 标题 + <<<**；`hideColPublished` / `hideColScheduled` 驱动 `.board` 的 `--c1`/`--c2` 与 sticky `left`，隐藏时列宽收束并淡出，行为参照原 Streamlit `toggle-col1/2`。
+
+验证结果:
+- 本地 `python -m src.dashboard_api.run` 打开 `/board/` 手测：设置默认折叠、Live 首屏、侧栏折叠对齐、列隐藏与 emoji 按钮可用。
+
+风险/阻塞:
+- Emoji 显示仍依赖客户端系统彩色字体；极端环境若显示方框，用户可依赖 `title` / `aria-label`。
+
+下一步:
+- 若需与 Streamlit 完全一致，锁定可改回内联 SVG（当前为 Unicode 锁形 emoji）。
