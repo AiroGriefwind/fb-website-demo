@@ -538,7 +538,7 @@
         </div>
         <div class="sidebar-content">
           <div class="side-block">
-            <div class="side-sub">栏目筛选</div>
+            <div class="side-sub">栏目筛选（仅已发布 / 已排程）</div>
             <div class="chip-row">
               <button class="chip" :class="{ active: selectedCategory === 'ALL' }" @click="selectedCategory = 'ALL'; rebuildColumns()" :disabled="actionBusy">全部</button>
               <template x-for="cat in categoryOrder" :key="cat">
@@ -1268,15 +1268,15 @@
             const published = this.raw?.published || [];
             const scheduled = this.raw?.scheduled || [];
             const pending = this.raw?.pending_by_category || {};
+            const matchesSelectedCategory = (item) => {
+              if (this.selectedCategory === "ALL") return true;
+              return this._normalizeCategoryKey(item?.category, "") === this.selectedCategory;
+            };
             const cols = [
-              { id: "published", title: "已發佈", kind: "published", items: published },
-              { id: "scheduled", title: "已排程", kind: "scheduled", items: scheduled },
+              { id: "published", title: "已發佈", kind: "published", items: published.filter(matchesSelectedCategory) },
+              { id: "scheduled", title: "已排程", kind: "scheduled", items: scheduled.filter(matchesSelectedCategory) },
             ];
             this.categoryOrder.forEach((cat) => {
-              if (this.selectedCategory !== "ALL" && this.selectedCategory !== cat) {
-                cols.push({ id: "pending-" + cat, title: cat + "（已出未排）", kind: "pending", category: cat, items: [] });
-                return;
-              }
               cols.push({ id: "pending-" + cat, title: cat + "（已出未排）", kind: "pending", category: cat, items: pending[cat] || [] });
             });
             this.columns = cols;
@@ -1655,7 +1655,6 @@
             if (this.mode === "mock") {
               this.closeDialog("delete");
               this.mockDelete(item, cat || this._resolveCategoryColumnKey(item));
-              if (cat) this._ensurePendingCategoryVisible(cat);
               this.rebuildColumns();
               this.message = "Mock：已返回已出未排";
               return;
@@ -1669,11 +1668,9 @@
             }
             const snap = this._cloneRaw();
             const optId = "opt-" + Date.now() + "-d";
-            const prevSelectedCategory = this.selectedCategory;
             this.closeDialog("delete");
             const [removed] = this.raw.scheduled.splice(idx, 1);
             if (cat) {
-              this._ensurePendingCategoryVisible(cat);
               const pendingRow = {
                 ...removed,
                 review_status: "waiting",
@@ -1699,7 +1696,6 @@
               this.message = "取消排程成功｜已刷新 " + new Date().toLocaleTimeString();
             } catch (e) {
               this._restoreRaw(snap);
-              this.selectedCategory = prevSelectedCategory;
               this.rebuildColumns();
               this.message = "取消排程失败：" + String(e.message || e);
             } finally {
@@ -1823,12 +1819,6 @@
           /** 已出未排列键须落在 categoryOrder 内，否则 rebuildColumns 不会渲染对应列 */
           _resolveCategoryColumnKey(item) {
             return this._normalizeCategoryKey(item?.category);
-          },
-          /** 侧栏单分类筛选时，若目标贴文落在另一分类列，该列会被置空；乐观 UI 前切到该分类以便看到卡片 */
-          _ensurePendingCategoryVisible(cat) {
-            if (this.selectedCategory !== "ALL" && this.selectedCategory !== cat) {
-              this.selectedCategory = cat;
-            }
           },
           windowHintText() {
             const step = Number(this.settings.schedule_window_minutes || 10);

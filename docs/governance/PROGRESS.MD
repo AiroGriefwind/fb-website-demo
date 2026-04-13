@@ -1402,3 +1402,19 @@
 下一步:
 - 继续拆解动作接口内部的 `_sync_live()`，评估按动作类型最小化刷新（例如仅重建 `scheduled` + 受影响分类 pending）的可行性。
 - 在线验证 API 日志是否已从“动作后两轮全量 CMS 请求”收敛为“动作内一轮同步 + 局部无同步回读”。
+
+日期时间(HKT): 2026-04-13（续二）
+负责人/LLM: wangz / GPT-5.4
+分支/worktree: feature/bot-ui-ops（本仓库）
+完成内容:
+- [本仓库] 调整独立看板侧栏「栏目筛选」作用域：`frontend/board/index.html` 中 `rebuildColumns()` 仅对 **已發佈**、**已排程** 两列按 `selectedCategory` 过滤；**已出未排** 七列始终完整展示，不再因单选筛选被置空。侧栏副标题改为「栏目筛选（仅已发布 / 已排程）」以免误解。
+- [本仓库] 移除 `_ensurePendingCategoryVisible` 及删除流程中对 `selectedCategory` 的自动切换与失败回滚（此前为在筛选非目标列时仍能看到 pending 乐观卡片）；在「筛选只影响前两列」后不再需要该行为。
+
+验证结果:
+- 逻辑自检：`rebuildColumns` 中 pending 分支不再依赖 `selectedCategory`；`confirmDelete` mock/live 路径已无 `_ensurePendingCategoryVisible` 调用。
+
+风险/阻塞:
+- 若 `published` / `scheduled` 行 `category` 仍为 `未分類` 或与侧栏键不一致，筛选后该列可能为空；依赖后端 `live_api_sync` 分类回填与别名归一化（前端 `_normalizeCategoryKey`）尽量对齐。
+
+下一步:
+- 视产品需要，可为「仅前两列筛选」增加空态提示（例如「当前栏目下暂无已排程」）。
