@@ -12,6 +12,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from src.dashboard.config import (
+    BOARD_SCHEDULED_LOOKAHEAD_DAYS,
     CATEGORY_CLASS_MAP,
     CATEGORY_ORDER,
     DEFAULT_SCHEDULE_WINDOW_MINUTES,
@@ -23,7 +24,7 @@ from src.dashboard.data_utils import load_pending_base, load_published_items, lo
 from src.dashboard.fb_action_client import FBActionClient
 from src.dashboard.frontend_templates import build_chip_color_script, build_schedule_pick_script
 from src.dashboard.live_api_sync import sync_live_data_to_sample_files
-from src.dashboard.media_utils import parse_publish_time, resolve_thumbnail_src, round_up_to_window
+from src.dashboard.media_utils import parse_publish_time, resolve_thumbnail_src, round_up_to_window, to_utc_iso_z
 from src.dashboard.scheduling_utils import (
     build_scheduled_key,
     toggle_scheduled_lock,
@@ -259,7 +260,7 @@ def _process_pending_fb_action(scheduled_items: list[tuple[datetime, dict[str, A
                 post_link_type=str(action_payload.get("post_link_type", "link")).strip(),
                 image_url=str(action_payload.get("image_url", "")).strip(),
                 post_mp4_url=str(action_payload.get("post_mp4_url", "")).strip(),
-                post_timezone="Asia/Hong_Kong",
+                post_timezone="UTC",
             )
         elif action_type == "update":
             picked_time = str(action_payload.get("post_link_time", "")).strip()
@@ -284,21 +285,28 @@ def _process_pending_fb_action(scheduled_items: list[tuple[datetime, dict[str, A
                             post_id=int(action_payload.get("post_id", 0)),
                             post_link_id=str(action_payload.get("post_link_id", "")).strip(),
                             post_message=str(action_payload.get("post_message", "")).strip(),
-                            post_link_time=picked_time,
+                            post_link_time=to_utc_iso_z(picked_dt),
                             post_link_type=str(action_payload.get("post_link_type", "link")).strip(),
                             image_url=str(action_payload.get("image_url", "")).strip(),
                             post_mp4_url=str(action_payload.get("post_mp4_url", "")).strip(),
+                            post_timezone="UTC",
                         )
             else:
-                result = client.update_post(
-                    post_id=int(action_payload.get("post_id", 0)),
-                    post_link_id=str(action_payload.get("post_link_id", "")).strip(),
-                    post_message=str(action_payload.get("post_message", "")).strip(),
-                    post_link_time=picked_time,
-                    post_link_type=str(action_payload.get("post_link_type", "link")).strip(),
-                    image_url=str(action_payload.get("image_url", "")).strip(),
-                    post_mp4_url=str(action_payload.get("post_mp4_url", "")).strip(),
-                )
+                try:
+                    picked_dt_pub = datetime.strptime(picked_time, "%Y-%m-%dT%H:%M").replace(tzinfo=HKT_TZ)
+                except ValueError:
+                    result = {"ok": False, "message": "时间格式错误，请使用 YYYY-MM-DDTHH:mm。", "log_file": "N/A"}
+                else:
+                    result = client.update_post(
+                        post_id=int(action_payload.get("post_id", 0)),
+                        post_link_id=str(action_payload.get("post_link_id", "")).strip(),
+                        post_message=str(action_payload.get("post_message", "")).strip(),
+                        post_link_time=to_utc_iso_z(picked_dt_pub),
+                        post_link_type=str(action_payload.get("post_link_type", "link")).strip(),
+                        image_url=str(action_payload.get("image_url", "")).strip(),
+                        post_mp4_url=str(action_payload.get("post_mp4_url", "")).strip(),
+                        post_timezone="UTC",
+                    )
         elif action_type == "delete":
             result = client.delete_post(
                 post_id=int(action_payload.get("post_id", 0)),
@@ -536,7 +544,7 @@ def _render_schedule_dialog_if_needed(pending_lookup: dict[str, dict[str, Any]],
                         "type": "publish",
                         "post_id": post_id,
                         "post_message": post_message,
-                        "post_link_time": _to_hkt_input_time(schedule_dt),
+                        "post_link_time": to_utc_iso_z(schedule_dt),
                         "post_link_type": post_type,
                         "image_url": image_url,
                         "post_mp4_url": post_mp4_url,
@@ -895,7 +903,7 @@ def render_today_board() -> None:
         return
 
     past_24h = now_hkt - timedelta(hours=24)
-    next_24h = now_hkt + timedelta(hours=24)
+    scheduled_until = now_hkt + timedelta(days=int(BOARD_SCHEDULED_LOOKAHEAD_DAYS))
 
     scheduled_items = _collect_time_sorted_items(load_scheduled_items())
     _process_pending_fb_action(scheduled_items=scheduled_items, now_hkt=now_hkt)
@@ -1109,12 +1117,12 @@ def render_today_board() -> None:
             is_locked=bool(item.get("is_locked", False)),
         )
         for dt, item in sorted(scheduled_items, key=lambda x: x[0])
-        if now_hkt <= dt <= next_24h and (not active_categories or str(item.get("category", "未分類")) in active_categories)
+        if now_hkt <= dt <= scheduled_until and (not active_categories or str(item.get("category", "未分類")) in active_categories)
     ]
     if scheduled_in_window or not enable_board_fallback_mode:
         scheduled_cards = scheduled_in_window
     else:
-        # Fallback: if no items in next 24h, still show scheduled list from API.
+        # Fallback: if no items in the lookahead window, still show full scheduled list from API.
         scheduled_cards = [
             _card_html(
                 item,

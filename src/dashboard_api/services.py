@@ -5,9 +5,16 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from src.dashboard.config import CATEGORY_ORDER, HKT_TZ, PENDING_FILE, PUBLISHED_FILE, SCHEDULED_FILE
+from src.dashboard.config import (
+    BOARD_SCHEDULED_LOOKAHEAD_DAYS,
+    CATEGORY_ORDER,
+    HKT_TZ,
+    PENDING_FILE,
+    PUBLISHED_FILE,
+    SCHEDULED_FILE,
+)
 from src.dashboard.data_utils import read_json_list, write_json_list
-from src.dashboard.media_utils import parse_publish_time
+from src.dashboard.media_utils import parse_publish_time, to_utc_iso_z
 from src.dashboard_api.cms_client import CmsActionClient
 
 
@@ -142,7 +149,8 @@ def _plan_publish_slot_adjustments(
                     "post_link_type": str(row.get("post_link_type", "link")).strip() or "link",
                     "image_url": str(row.get("image_url", "")).strip(),
                     "post_mp4_url": str(row.get("post_mp4_url", "")).strip(),
-                    "post_link_time": _to_hkt_input_time(next_slot),
+                    "post_link_time": to_utc_iso_z(next_slot),
+                    "post_timezone": "UTC",
                     "_old_ts": int(old_dt.timestamp()),
                 }
             )
@@ -204,7 +212,7 @@ def load_board_columns(includes: list[str] | None = None) -> dict[str, Any]:
 
     now_hkt = datetime.now(HKT_TZ)
     past_24h = now_hkt - timedelta(hours=24)
-    next_24h = now_hkt + timedelta(hours=24)
+    scheduled_until = now_hkt + timedelta(days=int(BOARD_SCHEDULED_LOOKAHEAD_DAYS))
 
     published_items = _collect_time_sorted_items(read_json_list(PUBLISHED_FILE))
     scheduled_items = _collect_time_sorted_items(read_json_list(SCHEDULED_FILE))
@@ -215,7 +223,9 @@ def load_board_columns(includes: list[str] | None = None) -> dict[str, Any]:
         for dt, item in sorted(published_items, key=lambda x: x[0], reverse=True)
         if past_24h <= dt <= now_hkt
     ]
-    scheduled_windowed = [item for dt, item in sorted(scheduled_items, key=lambda x: x[0]) if now_hkt <= dt <= next_24h]
+    scheduled_windowed = [
+        item for dt, item in sorted(scheduled_items, key=lambda x: x[0]) if now_hkt <= dt <= scheduled_until
+    ]
 
     pending_windowed_by_category: dict[str, list[dict[str, Any]]] = {c: [] for c in CATEGORY_ORDER}
     for dt, row in sorted(pending_pairs, key=lambda x: x[0], reverse=True):
@@ -238,7 +248,7 @@ def load_board_columns(includes: list[str] | None = None) -> dict[str, Any]:
     )
 
     # 与 Streamlit 侧一致：兜底按「列」独立判断。旧实现用「已發佈或任一分類有待排」绑死三列，
-    # 会导致某一分类在 24h 内为空时永远不兜底，即使用户已勾选「看板渲染兜底」。
+    # 会导致某一分类在窗口内为空时永远不兜底，即使用户已勾选「看板渲染兜底」。
     use_fallback_published = bool(fallback_mode_enabled and not published_windowed)
     use_fallback_scheduled = bool(fallback_mode_enabled and not scheduled_windowed)
     published = published_all if use_fallback_published else published_windowed
@@ -283,7 +293,15 @@ def load_board_columns(includes: list[str] | None = None) -> dict[str, Any]:
     }
 
 
-def publish_from_pending(item_id: str, schedule_time: str, window_minutes: int = 10) -> dict[str, Any]:
+def publish_from_pending(
+    item_id: str,
+    schedule_time: str,
+    window_minutes: int = 10,
+    *,
+    post_message: str = "",
+    post_link_type: str = "",
+    image_url: str = "",
+) -> dict[str, Any]:
     pending_rows = read_json_list(PENDING_FILE)
     scheduled_rows = read_json_list(SCHEDULED_FILE)
     target = next((x for x in pending_rows if str(x.get("item_id", "")).strip() == item_id.strip()), None)
@@ -297,6 +315,14 @@ def publish_from_pending(item_id: str, schedule_time: str, window_minutes: int =
     now_hkt = datetime.now(HKT_TZ).replace(second=0, microsecond=0)
     if schedule_dt <= now_hkt:
         return {"ok": False, "message": "cannot schedule in the past"}
+
+    msg = str(post_message or "").strip()
+    if not msg:
+        msg = str(target.get("post_message", "")).strip() or str(target.get("title", "")).strip()
+    ptype = str(post_link_type or "").strip().lower() or str(target.get("post_link_type", "link")).strip() or "link"
+    img = str(image_url or "").strip() or str(target.get("image_url", "")).strip()
+    if ptype == "photo" and not img:
+        return {"ok": False, "message": "photo 类型需要图片 URL"}
 
     ok_plan, plan_message, pre_updates, impact = _plan_publish_slot_adjustments(
         schedule_dt=schedule_dt,
@@ -318,6 +344,7 @@ def publish_from_pending(item_id: str, schedule_time: str, window_minutes: int =
                 "post_link_type": str(row.get("post_link_type", "link")),
                 "image_url": str(row.get("image_url", "")) or None,
                 "post_mp4_url": str(row.get("post_mp4_url", "")) or None,
+                "post_timezone": str(row.get("post_timezone", "UTC")),
             },
         )
         if not bool(update_result.get("ok")):
@@ -327,12 +354,12 @@ def publish_from_pending(item_id: str, schedule_time: str, window_minutes: int =
         "fb_publish",
         {
             "post_id": int(target.get("post_id", 0)),
-            "post_message": str(target.get("post_message", "")).strip() or str(target.get("title", "")).strip(),
-            "post_link_time": schedule_time.strip(),
-            "post_link_type": str(target.get("post_link_type", "link")).strip() or "link",
-            "image_url": str(target.get("image_url", "")).strip() or None,
+            "post_message": msg,
+            "post_link_time": to_utc_iso_z(schedule_dt),
+            "post_link_type": ptype,
+            "image_url": img or None,
             "post_mp4_url": str(target.get("post_mp4_url", "")).strip() or None,
-            "post_timezone": "Asia/Hong_Kong",
+            "post_timezone": "UTC",
         },
     )
     if not bool(publish_result.get("ok")):
@@ -343,13 +370,14 @@ def publish_from_pending(item_id: str, schedule_time: str, window_minutes: int =
 
 
 def update_scheduled(payload: dict[str, Any]) -> dict[str, Any]:
+    picked_time = str(payload.get("post_link_time", "")).strip()
+    try:
+        picked_dt = datetime.strptime(picked_time, "%Y-%m-%dT%H:%M").replace(tzinfo=HKT_TZ)
+    except ValueError:
+        return {"ok": False, "message": "invalid time format, expected YYYY-MM-DDTHH:mm (HKT)"}
+
     enforce_window = bool(payload.get("enforce_time_validation", True))
     if enforce_window:
-        picked_time = str(payload.get("post_link_time", "")).strip()
-        try:
-            picked_dt = datetime.strptime(picked_time, "%Y-%m-%dT%H:%M").replace(tzinfo=HKT_TZ)
-        except ValueError:
-            return {"ok": False, "message": "invalid time format, expected YYYY-MM-DDTHH:mm"}
         ok_time, msg_time = _validate_update_time_and_window(
             picked_dt=picked_dt,
             now_hkt=datetime.now(HKT_TZ),
@@ -365,10 +393,11 @@ def update_scheduled(payload: dict[str, Any]) -> dict[str, Any]:
         "post_id": int(payload.get("post_id", 0)),
         "post_link_id": str(payload.get("post_link_id", "")).strip(),
         "post_message": str(payload.get("post_message", "")).strip(),
-        "post_link_time": str(payload.get("post_link_time", "")).strip(),
+        "post_link_time": to_utc_iso_z(picked_dt),
         "post_link_type": str(payload.get("post_link_type", "link")).strip() or "link",
         "image_url": str(payload.get("image_url", "")).strip() or None,
         "post_mp4_url": str(payload.get("post_mp4_url", "")).strip() or None,
+        "post_timezone": "UTC",
     }
     result = client.run_action("fb_update", action_payload)
     if not bool(result.get("ok")):

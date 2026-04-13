@@ -421,6 +421,25 @@
       .modal .row > * { flex: 1; min-width: 0; }
       .modal .actions { justify-content: flex-end; margin-top: 12px; }
       .error-text { font-size: 12px; color: #bf1f3d; margin-top: 6px; }
+      .hint-text { font-size: 12px; color: #5a5ab1; margin-top: 6px; line-height: 1.4; }
+      .modal-schedule-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 12px;
+      }
+      .modal-schedule-footer .actions { margin-top: 0; }
+      .schedule-photo-preview {
+        max-width: 100%;
+        max-height: 180px;
+        object-fit: contain;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: #f0f3fb;
+        margin-top: 8px;
+      }
       @media (max-width: 1024px) {
         .layout, .layout.sidebar-collapsed { grid-template-columns: 1fr; }
         .sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
@@ -792,6 +811,13 @@
             <h3>设置排程时间</h3>
             <div class="tiny" style="margin:6px 0 10px;" x-text="'目标贴文：' + (dialogs.schedule.item?.title || 'N/A')"></div>
             <div class="tiny" style="margin-bottom:8px;" x-text="windowHintText()"></div>
+            <textarea
+              class="field"
+              style="min-height:100px;"
+              x-model="forms.schedule.post_message"
+              placeholder="贴文正文（默认可编辑，默认来自标题）"
+              @input="dialogs.schedule.urlHint = ''"
+            ></textarea>
             <div class="row">
               <select class="field" x-model.number="forms.schedule.hour" @change="refreshScheduleSlots()">
                 <template x-for="h in scheduleSlots.hours" :key="'sh_'+h"><option :value="h" x-text="String(h).padStart(2,'0')"></option></template>
@@ -800,21 +826,59 @@
                 <template x-for="m in scheduleSlots.minutes" :key="'sm_'+m"><option :value="m" x-text="String(m).padStart(2,'0')"></option></template>
               </select>
             </div>
+            <div class="tiny" style="margin:6px 0 4px;">日期（香港时间，日 / 月 / 年）</div>
             <div class="row">
-              <select class="field" x-model.number="forms.schedule.year" @change="refreshScheduleSlots()">
-                <template x-for="y in yearOptions(forms.schedule.year)" :key="'sy_'+y"><option :value="y" x-text="y"></option></template>
+              <select class="field" x-model.number="forms.schedule.day" @change="_clampScheduleFormDate()">
+                <template x-for="d in scheduleDayOptions()" :key="'sd_'+d"><option :value="d" x-text="String(d).padStart(2,'0')"></option></template>
               </select>
-              <select class="field" x-model.number="forms.schedule.month" @change="refreshScheduleSlots()">
-                <template x-for="m in monthOptions" :key="'smo_'+m"><option :value="m" x-text="String(m).padStart(2,'0')"></option></template>
+              <select class="field" x-model.number="forms.schedule.month" @change="_clampScheduleFormDate()">
+                <template x-for="m in scheduleMonthOptions()" :key="'smo_'+m"><option :value="m" x-text="String(m).padStart(2,'0')"></option></template>
               </select>
-              <select class="field" x-model.number="forms.schedule.day" @change="refreshScheduleSlots()">
-                <template x-for="d in dayOptions(forms.schedule.year, forms.schedule.month)" :key="'sd_'+d"><option :value="d" x-text="String(d).padStart(2,'0')"></option></template>
+              <select class="field" x-model.number="forms.schedule.year" @change="_clampScheduleFormDate()">
+                <template x-for="y in scheduleYearOptions()" :key="'sy_'+y"><option :value="y" x-text="y"></option></template>
               </select>
             </div>
+            <label class="tiny" style="display:block;margin-top:10px;">贴文类型</label>
+            <select class="field" x-model="forms.schedule.post_link_type" @change="onSchedulePostTypeChange()">
+              <option value="link">link</option>
+              <option value="text">text</option>
+              <option value="photo">photo</option>
+            </select>
+            <div x-show="forms.schedule.post_link_type === 'photo'" x-cloak>
+              <div class="tiny" style="margin-top:8px;">图片（默认 feature_image / 卡片缩略图）</div>
+              <img
+                class="schedule-photo-preview"
+                :src="forms.schedule.image_url || resolveThumb(dialogs.schedule.item)"
+                alt="preview"
+                @error="onThumbError($event)"
+              />
+              <input
+                class="field"
+                type="text"
+                x-model="forms.schedule.image_url"
+                placeholder="图片 URL（photo 必填）"
+              />
+              <p class="tiny" style="margin-top:6px;word-break:break-all;">
+                The picture you selected:<br />
+                <span x-text="forms.schedule.image_url || '(empty)'"></span>
+              </p>
+            </div>
             <div class="error-text" x-show="dialogs.schedule.error" x-text="dialogs.schedule.error"></div>
-            <div class="actions">
-              <button class="btn" @click="closeDialog('schedule')">取消</button>
-              <button class="btn primary" @click="confirmSchedule()">确认排程</button>
+            <div class="hint-text" x-show="dialogs.schedule.urlHint" x-text="dialogs.schedule.urlHint"></div>
+            <div class="modal-schedule-footer">
+              <button
+                type="button"
+                class="btn"
+                :disabled="forms.schedule.post_link_type === 'link'"
+                :title="forms.schedule.post_link_type === 'link' ? 'link 类型使用贴文链接，无需追加 URL' : '在正文下一行追加网站贴文 URL'"
+                @click="appendSchedulePostLink()"
+              >
+                Add URL
+              </button>
+              <div class="actions">
+                <button type="button" class="btn" @click="closeDialog('schedule')">取消</button>
+                <button type="button" class="btn primary" @click="confirmSchedule()">确认排程</button>
+              </div>
             </div>
           </div>
         </div>
@@ -824,6 +888,13 @@
             <h3>修改贴文</h3>
             <div class="tiny" style="margin:6px 0 10px;" x-text="'目标贴文：' + (dialogs.update.item?.title || 'N/A')"></div>
             <div class="tiny" style="margin-bottom:8px;" x-text="windowHintText()"></div>
+            <textarea
+              class="field"
+              style="min-height:100px;"
+              x-model="forms.update.post_message"
+              placeholder="贴文正文（默认可编辑，默认来自标题）"
+              @input="dialogs.update.urlHint = ''"
+            ></textarea>
             <div class="row">
               <select class="field" x-model.number="forms.update.hour" @change="refreshUpdateSlots()">
                 <template x-for="h in updateSlots.hours" :key="'uh_'+h"><option :value="h" x-text="String(h).padStart(2,'0')"></option></template>
@@ -832,30 +903,54 @@
                 <template x-for="m in updateSlots.minutes" :key="'um_'+m"><option :value="m" x-text="String(m).padStart(2,'0')"></option></template>
               </select>
             </div>
+            <div class="tiny" style="margin:6px 0 4px;">日期（香港时间，日 / 月 / 年）</div>
             <div class="row">
-              <select class="field" x-model.number="forms.update.year" @change="refreshUpdateSlots()">
-                <template x-for="y in yearOptions(forms.update.year)" :key="'uy_'+y"><option :value="y" x-text="y"></option></template>
+              <select class="field" x-model.number="forms.update.day" @change="_clampUpdateFormDate()">
+                <template x-for="d in updateDayOptions()" :key="'ud_'+d"><option :value="d" x-text="String(d).padStart(2,'0')"></option></template>
               </select>
-              <select class="field" x-model.number="forms.update.month" @change="refreshUpdateSlots()">
-                <template x-for="m in monthOptions" :key="'umo_'+m"><option :value="m" x-text="String(m).padStart(2,'0')"></option></template>
+              <select class="field" x-model.number="forms.update.month" @change="_clampUpdateFormDate()">
+                <template x-for="m in updateMonthOptions()" :key="'umo_'+m"><option :value="m" x-text="String(m).padStart(2,'0')"></option></template>
               </select>
-              <select class="field" x-model.number="forms.update.day" @change="refreshUpdateSlots()">
-                <template x-for="d in dayOptions(forms.update.year, forms.update.month)" :key="'ud_'+d"><option :value="d" x-text="String(d).padStart(2,'0')"></option></template>
+              <select class="field" x-model.number="forms.update.year" @change="_clampUpdateFormDate()">
+                <template x-for="y in updateYearOptions()" :key="'uy_'+y"><option :value="y" x-text="y"></option></template>
               </select>
             </div>
-            <select class="field" x-model="forms.update.post_link_type">
+            <label class="tiny" style="display:block;margin-top:10px;">贴文类型</label>
+            <select class="field" x-model="forms.update.post_link_type" @change="onUpdatePostTypeChange()">
               <option value="link">link</option>
               <option value="text">text</option>
               <option value="photo">photo</option>
-              <option value="video">video</option>
             </select>
-            <textarea class="field" style="min-height:120px;" x-model="forms.update.post_message" placeholder="贴文内容"></textarea>
-            <input class="field" type="text" x-model="forms.update.image_url" :placeholder="forms.update.post_link_type === 'photo' ? '图片 URL（必填）' : '图片 URL（选填）'" />
-            <input class="field" type="text" x-model="forms.update.post_mp4_url" :placeholder="forms.update.post_link_type === 'video' ? '视频 URL（必填）' : '视频 URL（选填）'" />
+            <div x-show="forms.update.post_link_type === 'photo'" x-cloak>
+              <div class="tiny" style="margin-top:8px;">图片（默认 feature_image / 卡片缩略图）</div>
+              <img
+                class="schedule-photo-preview"
+                :src="forms.update.image_url || resolveThumb(dialogs.update.item)"
+                alt="preview"
+                @error="onThumbError($event)"
+              />
+              <input class="field" type="text" x-model="forms.update.image_url" placeholder="图片 URL（photo 必填）" />
+              <p class="tiny" style="margin-top:6px;word-break:break-all;">
+                The picture you selected:<br />
+                <span x-text="forms.update.image_url || '(empty)'"></span>
+              </p>
+            </div>
             <div class="error-text" x-show="dialogs.update.error" x-text="dialogs.update.error"></div>
-            <div class="actions">
-              <button class="btn" @click="closeDialog('update')">返回</button>
-              <button class="btn primary" @click="confirmUpdate()">确认修改</button>
+            <div class="hint-text" x-show="dialogs.update.urlHint" x-text="dialogs.update.urlHint"></div>
+            <div class="modal-schedule-footer">
+              <button
+                type="button"
+                class="btn"
+                :disabled="forms.update.post_link_type === 'link'"
+                :title="forms.update.post_link_type === 'link' ? 'link 类型使用贴文链接，无需追加 URL' : '在正文下一行追加网站贴文 URL'"
+                @click="appendUpdatePostLink()"
+              >
+                Add URL
+              </button>
+              <div class="actions">
+                <button type="button" class="btn" @click="closeDialog('update')">返回</button>
+                <button type="button" class="btn primary" @click="confirmUpdate()">确认修改</button>
+              </div>
             </div>
           </div>
         </div>
@@ -902,15 +997,30 @@
             target_fan_page_id: "350584865140118",
           },
           dialogs: {
-            schedule: { open: false, item: null, error: "" },
-            update: { open: false, item: null, error: "" },
+            schedule: { open: false, item: null, error: "", urlHint: "" },
+            update: { open: false, item: null, error: "", urlHint: "" },
             delete: { open: false, item: null, error: "" },
           },
           forms: {
-            schedule: { year: 0, month: 0, day: 0, hour: 0, minute: 0 },
+            schedule: {
+              year: 0,
+              month: 0,
+              day: 0,
+              hour: 0,
+              minute: 0,
+              post_message: "",
+              post_link_type: "link",
+              image_url: "",
+            },
             update: {
-              year: 0, month: 0, day: 0, hour: 0, minute: 0,
-              post_link_type: "link", post_message: "", image_url: "", post_mp4_url: "",
+              year: 0,
+              month: 0,
+              day: 0,
+              hour: 0,
+              minute: 0,
+              post_link_type: "link",
+              post_message: "",
+              image_url: "",
             },
           },
           scheduleSlots: { hours: [], minutes: [] },
@@ -1166,6 +1276,134 @@
             });
             this.columns = cols;
           },
+          pendingArticleUrl(item) {
+            return String(item?.["Post URL"] || item?.post_link || "").trim();
+          },
+          pendingFeatureImageUrl(item) {
+            return String(item?.image_url || item?.thumbnail || "").trim();
+          },
+          scheduleYearOptions() {
+            const p = this._hktPartsFromInstant(Date.now());
+            const y0 = p.year;
+            return [y0, y0 + 1, y0 + 2];
+          },
+          scheduleMonthOptions() {
+            const p = this._hktPartsFromInstant(Date.now());
+            const cy = p.year;
+            const cm = p.month;
+            const y = Number(this.forms.schedule.year);
+            const start = y === cy ? cm : 1;
+            const arr = [];
+            for (let m = start; m <= 12; m++) arr.push(m);
+            return arr;
+          },
+          scheduleDayOptions() {
+            const p = this._hktPartsFromInstant(Date.now());
+            const cy = p.year;
+            const cm = p.month;
+            const cd = p.day;
+            const y = Number(this.forms.schedule.year);
+            const mo = Number(this.forms.schedule.month);
+            const maxD = new Date(y, mo, 0).getDate();
+            const start = y === cy && mo === cm ? cd : 1;
+            const arr = [];
+            for (let d = start; d <= maxD; d++) arr.push(d);
+            return arr;
+          },
+          _clampScheduleFormDate() {
+            const years = this.scheduleYearOptions();
+            if (!years.includes(Number(this.forms.schedule.year))) this.forms.schedule.year = years[0];
+            const months = this.scheduleMonthOptions();
+            if (!months.includes(Number(this.forms.schedule.month))) this.forms.schedule.month = months[0];
+            const days = this.scheduleDayOptions();
+            if (!days.includes(Number(this.forms.schedule.day))) this.forms.schedule.day = days[0];
+            this.refreshScheduleSlots();
+          },
+          onSchedulePostTypeChange() {
+            const item = this.dialogs.schedule.item;
+            const def = item ? this.pendingFeatureImageUrl(item) : "";
+            if (this.forms.schedule.post_link_type === "photo" && !String(this.forms.schedule.image_url || "").trim()) {
+              this.forms.schedule.image_url = def;
+            }
+            this.dialogs.schedule.urlHint = "";
+          },
+          appendSchedulePostLink() {
+            if (this.forms.schedule.post_link_type === "link") return;
+            const item = this.dialogs.schedule.item;
+            const url = item ? this.pendingArticleUrl(item) : "";
+            if (!url) {
+              this.dialogs.schedule.urlHint = "该贴文没有可用的网站 URL（post_link / Post URL）。";
+              return;
+            }
+            const msg = String(this.forms.schedule.post_message ?? "");
+            if (msg.includes(url)) {
+              this.dialogs.schedule.urlHint = "正文中已包含该贴文 URL，未重复添加。";
+              return;
+            }
+            this.dialogs.schedule.urlHint = "";
+            const trimmed = msg.trim();
+            this.forms.schedule.post_message = trimmed ? trimmed + "\n" + url : url;
+          },
+          updateYearOptions() {
+            return this.scheduleYearOptions();
+          },
+          updateMonthOptions() {
+            const p = this._hktPartsFromInstant(Date.now());
+            const cy = p.year;
+            const cm = p.month;
+            const y = Number(this.forms.update.year);
+            const start = y === cy ? cm : 1;
+            const arr = [];
+            for (let m = start; m <= 12; m++) arr.push(m);
+            return arr;
+          },
+          updateDayOptions() {
+            const p = this._hktPartsFromInstant(Date.now());
+            const cy = p.year;
+            const cm = p.month;
+            const cd = p.day;
+            const y = Number(this.forms.update.year);
+            const mo = Number(this.forms.update.month);
+            const maxD = new Date(y, mo, 0).getDate();
+            const start = y === cy && mo === cm ? cd : 1;
+            const arr = [];
+            for (let d = start; d <= maxD; d++) arr.push(d);
+            return arr;
+          },
+          _clampUpdateFormDate() {
+            const years = this.updateYearOptions();
+            if (!years.includes(Number(this.forms.update.year))) this.forms.update.year = years[0];
+            const months = this.updateMonthOptions();
+            if (!months.includes(Number(this.forms.update.month))) this.forms.update.month = months[0];
+            const days = this.updateDayOptions();
+            if (!days.includes(Number(this.forms.update.day))) this.forms.update.day = days[0];
+            this.refreshUpdateSlots();
+          },
+          onUpdatePostTypeChange() {
+            const item = this.dialogs.update.item;
+            const def = item ? String(item.image_url || item.thumbnail || "").trim() : "";
+            if (this.forms.update.post_link_type === "photo" && !String(this.forms.update.image_url || "").trim()) {
+              this.forms.update.image_url = def;
+            }
+            this.dialogs.update.urlHint = "";
+          },
+          appendUpdatePostLink() {
+            if (this.forms.update.post_link_type === "link") return;
+            const item = this.dialogs.update.item;
+            const url = item ? this.pendingArticleUrl(item) : "";
+            if (!url) {
+              this.dialogs.update.urlHint = "该贴文没有可用的网站 URL（Post URL / permalink）。";
+              return;
+            }
+            const msg = String(this.forms.update.post_message ?? "");
+            if (msg.includes(url)) {
+              this.dialogs.update.urlHint = "正文中已包含该贴文 URL，未重复添加。";
+              return;
+            }
+            this.dialogs.update.urlHint = "";
+            const trimmed = msg.trim();
+            this.forms.update.post_message = trimmed ? trimmed + "\n" + url : url;
+          },
           openScheduleDialog(item) {
             if (this.mode === "live" && this.actionBusy) {
               this.message = "当前有贴文操作进行中，请稍候";
@@ -1174,27 +1412,50 @@
             const step0 = Number(this.settings.schedule_window_minutes || 10);
             const p0 = this._hktPartsFromInstant(Date.now());
             const rounded = this._roundUpHktParts(p0, step0);
+            const defaultMsg = String(item.post_message || item.title || "").trim();
+            const defImg = this.pendingFeatureImageUrl(item);
+            let ptype = String(item.post_link_type || "link").toLowerCase();
+            if (!["link", "text", "photo"].includes(ptype)) ptype = "link";
             this.forms.schedule = {
               year: rounded.year,
               month: rounded.month,
               day: rounded.day,
               hour: rounded.hour,
               minute: rounded.minute,
+              post_message: defaultMsg,
+              post_link_type: ptype,
+              image_url: defImg,
             };
-            this.dialogs.schedule = { open: true, item: item, error: "" };
-            this.refreshScheduleSlots();
+            this.dialogs.schedule = { open: true, item: item, error: "", urlHint: "" };
+            this._clampScheduleFormDate();
           },
           async confirmSchedule() {
             const item = this.dialogs.schedule.item;
             if (!item) return;
+            this.dialogs.schedule.error = "";
             const when = this.buildTimeString(this.forms.schedule);
             const cat = String(item.category || "");
+            const pickedMsg = String(this.forms.schedule.post_message || "").trim();
+            const pickedType = String(this.forms.schedule.post_link_type || "link").toLowerCase();
+            const pickedImage = String(this.forms.schedule.image_url || "").trim();
             if (!when) {
               this.dialogs.schedule.error = "时间格式错误";
               return;
             }
+            if (!pickedMsg) {
+              this.dialogs.schedule.error = "贴文内容不能为空";
+              return;
+            }
+            if (pickedType === "photo" && !pickedImage) {
+              this.dialogs.schedule.error = "当前类型为 photo，图片 URL 不能为空";
+              return;
+            }
             if (this.mode === "mock") {
-              const mockResult = this.mockPublishWithRules(item, when);
+              const mockResult = this.mockPublishWithRules(item, when, {
+                post_message: pickedMsg,
+                post_link_type: pickedType,
+                image_url: pickedImage,
+              });
               if (!mockResult.ok) {
                 this.dialogs.schedule.error = mockResult.message || "排程失败";
                 return;
@@ -1214,7 +1475,9 @@
             const optimistic = {
               ...item,
               publish_time: when,
-              post_message: String(item.post_message || item.title || ""),
+              post_message: pickedMsg,
+              post_link_type: pickedType,
+              image_url: pickedImage,
               _optimistic: true,
               _optimisticPhase: "loading",
               _optTempId: optId,
@@ -1232,6 +1495,9 @@
                 item_id: itemId,
                 schedule_time: when,
                 window_minutes: Number(this.settings.schedule_window_minutes || 10),
+                post_message: pickedMsg,
+                post_link_type: pickedType,
+                image_url: pickedType === "photo" ? pickedImage : "",
               };
               const data = await this.callAction("/api/actions/publish", payload, { internal: true });
               const include = "scheduled" + (cat ? (",pending:" + cat) : ",pending");
@@ -1261,28 +1527,34 @@
             const baseMs = (this.parseToDate(item.publish_time) || new Date()).getTime();
             const p0 = this._hktPartsFromInstant(baseMs);
             const step0 = Number(this.settings.schedule_window_minutes || 10);
+            let ptype = String(item.post_link_type || "link").toLowerCase();
+            if (!["link", "text", "photo"].includes(ptype)) ptype = "link";
+            const defImg = String(item.image_url || item.thumbnail || "").trim();
             this.forms.update = {
               year: p0.year,
               month: p0.month,
               day: p0.day,
               hour: p0.hour,
               minute: this.alignMinute(p0.minute, step0),
-              post_link_type: String(item.post_link_type || "link"),
-              post_message: String(item.post_message || item.title || ""),
-              image_url: String(item.image_url || ""),
-              post_mp4_url: String(item.post_mp4_url || ""),
+              post_link_type: ptype,
+              post_message: String(item.post_message || item.title || "").trim(),
+              image_url: defImg,
             };
-            this.dialogs.update = { open: true, item: item, error: "" };
-            this.refreshUpdateSlots();
+            this.dialogs.update = { open: true, item: item, error: "", urlHint: "" };
+            this._clampUpdateFormDate();
           },
           async confirmUpdate() {
             const item = this.dialogs.update.item;
             if (!item) return;
+            this.dialogs.update.error = "";
             const when = this.buildTimeString(this.forms.update);
             const pickedType = String(this.forms.update.post_link_type || "link").toLowerCase();
             const pickedMsg = String(this.forms.update.post_message || "").trim();
             const pickedImage = String(this.forms.update.image_url || "").trim();
-            const pickedMp4 = String(this.forms.update.post_mp4_url || "").trim();
+            if (!when) {
+              this.dialogs.update.error = "时间格式错误";
+              return;
+            }
             if (!pickedMsg) {
               this.dialogs.update.error = "贴文内容不能为空";
               return;
@@ -1291,16 +1563,12 @@
               this.dialogs.update.error = "当前类型为 photo，图片 URL 不能为空";
               return;
             }
-            if (pickedType === "video" && !pickedMp4) {
-              this.dialogs.update.error = "当前类型为 video，视频 URL 不能为空";
-              return;
-            }
             if (this.mode === "mock") {
               const mockResult = this.mockUpdateWithRules(item, when, {
                 post_message: pickedMsg,
                 post_link_type: pickedType,
                 image_url: pickedImage,
-                post_mp4_url: pickedMp4,
+                post_mp4_url: "",
               });
               if (!mockResult.ok) {
                 this.dialogs.update.error = mockResult.message || "修改失败";
@@ -1329,7 +1597,7 @@
               post_message: pickedMsg,
               post_link_type: pickedType,
               image_url: pickedImage,
-              post_mp4_url: pickedMp4,
+              post_mp4_url: "",
               _optimistic: true,
               _optimisticPhase: "loading",
               _optTempId: optId,
@@ -1348,7 +1616,7 @@
                   post_link_time: when,
                   post_link_type: pickedType,
                   image_url: pickedImage,
-                  post_mp4_url: pickedMp4,
+                  post_mp4_url: "",
                   enforce_time_validation: true,
                   target_action_key: "plink:" + String(item.post_link_id || ""),
                   window_minutes: Number(this.settings.schedule_window_minutes || 10),
@@ -1378,11 +1646,11 @@
           async confirmDelete() {
             const item = this.dialogs.delete.item;
             if (!item) return;
-            const cat = this._resolveCategoryColumnKey(item);
+            const cat = this._resolveKnownCategoryColumnKey(item);
             if (this.mode === "mock") {
               this.closeDialog("delete");
-              this.mockDelete(item, cat);
-              this._ensurePendingCategoryVisible(cat);
+              this.mockDelete(item, cat || this._resolveCategoryColumnKey(item));
+              if (cat) this._ensurePendingCategoryVisible(cat);
               this.rebuildColumns();
               this.message = "Mock：已返回已出未排";
               return;
@@ -1398,28 +1666,30 @@
             const optId = "opt-" + Date.now() + "-d";
             const prevSelectedCategory = this.selectedCategory;
             this.closeDialog("delete");
-            this._ensurePendingCategoryVisible(cat);
             const [removed] = this.raw.scheduled.splice(idx, 1);
-            const pendingRow = {
-              ...removed,
-              review_status: "waiting",
-              post_link_id: "",
-              category: cat,
-              _optimistic: true,
-              _optimisticPhase: "loading",
-              _optTempId: optId,
-            };
-            if (!this.raw.pending_by_category) this.raw.pending_by_category = {};
-            if (!Array.isArray(this.raw.pending_by_category[cat])) this.raw.pending_by_category[cat] = [];
-            this.raw.pending_by_category[cat] = [pendingRow, ...this.raw.pending_by_category[cat]];
+            if (cat) {
+              this._ensurePendingCategoryVisible(cat);
+              const pendingRow = {
+                ...removed,
+                review_status: "waiting",
+                post_link_id: "",
+                category: cat,
+                _optimistic: true,
+                _optimisticPhase: "loading",
+                _optTempId: optId,
+              };
+              if (!this.raw.pending_by_category) this.raw.pending_by_category = {};
+              if (!Array.isArray(this.raw.pending_by_category[cat])) this.raw.pending_by_category[cat] = [];
+              this.raw.pending_by_category[cat] = [pendingRow, ...this.raw.pending_by_category[cat]];
+            }
             this.rebuildColumns();
             this.actionBusy = true;
             this.message = "正在呼叫 FB 取消排程 API（delete）…";
             this._apiBypassBusy = true;
             try {
               await this.callAction("/api/actions/delete", { post_id: postId, post_link_id: postLinkId }, { internal: true });
-              const include = "scheduled" + (cat ? (",pending:" + cat) : ",pending");
-              this.message = "正在同步已排程与「" + cat + "」已出未排…";
+              const include = cat ? ("scheduled,pending:" + cat) : "scheduled,pending";
+              this.message = cat ? ("正在同步已排程与「" + cat + "」已出未排…") : "正在同步已排程与全部已出未排…";
               await this.fetchColumns(include, { skipBoardLoading: true, skipDefaultMessage: true, rethrow: true });
               this.message = "取消排程成功｜已刷新 " + new Date().toLocaleTimeString();
             } catch (e) {
@@ -1434,6 +1704,14 @@
             }
           },
           closeDialog(kind) {
+            if (kind === "schedule") {
+              this.dialogs.schedule = { open: false, item: null, error: "", urlHint: "" };
+              return;
+            }
+            if (kind === "update") {
+              this.dialogs.update = { open: false, item: null, error: "", urlHint: "" };
+              return;
+            }
             this.dialogs[kind] = { open: false, item: null, error: "" };
           },
           async toggleLock(item) {
@@ -1507,11 +1785,39 @@
                 (iid && String(r.post_id || "") === iid)
             );
           },
+          _normalizeCategoryKey(raw, fallback = "娛樂") {
+            const c = String(raw || "").trim();
+            if (!c) return fallback;
+            const aliases = {
+              "娛圈事": "娛樂",
+              "娱乐": "娛樂",
+              "娛樂": "娛樂",
+              "社會": "社會事",
+              "社会事": "社會事",
+              "社會事": "社會事",
+              "大视野": "大視野",
+              "大視野": "大視野",
+              "两岸": "兩岸",
+              "兩岸": "兩岸",
+              "法庭": "法庭事",
+              "法庭事": "法庭事",
+              "消费": "消費",
+              "消費": "消費",
+              "心韩": "心韓",
+              "心 韓": "心韓",
+              "心韓": "心韓",
+            };
+            const normalized = aliases[c] || c;
+            return this.categoryOrder.includes(normalized) ? normalized : fallback;
+          },
+          _resolveKnownCategoryColumnKey(item) {
+            const c = String(item?.category || "").trim();
+            if (!c || c === "未分類") return "";
+            return this._normalizeCategoryKey(c, "");
+          },
           /** 已出未排列键须落在 categoryOrder 内，否则 rebuildColumns 不会渲染对应列 */
           _resolveCategoryColumnKey(item) {
-            const c = String(item?.category || "").trim();
-            if (this.categoryOrder.includes(c)) return c;
-            return "娛樂";
+            return this._normalizeCategoryKey(item?.category);
           },
           /** 侧栏单分类筛选时，若目标贴文落在另一分类列，该列会被置空；乐观 UI 前切到该分类以便看到卡片 */
           _ensurePendingCategoryVisible(cat) {
@@ -1699,7 +2005,8 @@
           formatLocalInputTime(dt) {
             return new Date(dt.getTime()).toISOString();
           },
-          mockPublishWithRules(item, when) {
+          mockPublishWithRules(item, when, extras) {
+            const x = extras || {};
             const step = Number(this.settings.schedule_window_minutes || 10);
             const targetDt = this.parseHktWallTimeToDate(when);
             if (!targetDt) return { ok: false, message: "时间格式错误" };
@@ -1752,7 +2059,7 @@
               nextDt = this.addMinutes(nextDt, step);
             }
 
-            const cat = String(item.category || "娛樂");
+            const cat = this._normalizeCategoryKey(item.category);
             if (!this.raw.pending_by_category[cat]) this.raw.pending_by_category[cat] = [];
             this.raw.pending_by_category[cat] = this.raw.pending_by_category[cat].filter((x) => String(x.item_id) !== String(item.item_id));
             this.raw.scheduled = this.raw.scheduled.filter((x) => !moved.includes(x));
@@ -1760,6 +2067,9 @@
             this.raw.scheduled.push({
               ...item,
               publish_time: when,
+              post_message: x.post_message != null ? String(x.post_message) : String(item.post_message || item.title || ""),
+              post_link_type: x.post_link_type != null ? String(x.post_link_type) : String(item.post_link_type || "link"),
+              image_url: x.image_url != null ? String(x.image_url) : String(item.image_url || item.thumbnail || ""),
               post_id: Number(item.post_id || item.item_id || 0),
               post_link_id: String(item.post_link_id || ("mock_" + item.item_id)),
               is_locked: Boolean(item.is_locked || false),
@@ -1886,8 +2196,10 @@
                   category: cat,
                   publish_time: toIso(-30 - i * 20),
                   thumbnail: this.dummyThumb,
+                  image_url: this.dummyThumb,
                   post_message: cat + " Mock 文章 " + (i + 1),
                   post_link_type: "link",
+                  "Post URL": "https://mock.example/article/" + id,
                 };
               });
             });

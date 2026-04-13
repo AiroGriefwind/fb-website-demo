@@ -1360,3 +1360,25 @@
 
 下一步:
 - 若需与 Streamlit 完全一致，锁定可改回内联 SVG（当前为 Unicode 锁形 emoji）。
+
+日期时间(HKT): 2026-04-13
+负责人/LLM: wangz / GPT-5.4
+分支/worktree: feature/bot-ui-ops（本仓库）
+完成内容:
+- [本仓库] 独立看板 `frontend/board/index.html` 的「修改贴文」弹窗与「设置排程时间」弹窗对齐：补齐 `post_message` 文本框、`Add URL`、`link/text/photo` 类型切换、photo 预览与图片 URL、HKT `日/月/年` 日期选择及对应状态逻辑；`confirmUpdate()` 改为与当前三种类型约束一致，`photo` 强校验图片，`post_mp4_url` 统一传空串。
+- [本仓库] `src/dashboard/live_api_sync.py` 修正已排程/已发布类型识别：新增对 CMS `fb_scheduled`/`fb_published` 返回 `type: "text"` 的映射，不再把 text 误落成 link；同时补强 CMS 文章映射，优先用文章 URL `link` 回填 CMS post，并增加 `category_by_cms_id` 以在 `fb_scheduled` 未直接返回栏目时回填真实分类，减少 `scheduled.category = 未分類`。
+- [本仓库] 已排程展示窗口从 `24h` 放宽为 `7 天`：`src/dashboard/config.py` 新增 `BOARD_SCHEDULED_LOOKAHEAD_DAYS`，并同步到 `src/dashboard_api/services.py` 与 `src/dashboard/board_view.py`，避免隔天凌晨/未来数日的排程因为窗口过短在看板中“看不见”。
+- [本仓库] 「返回已出未排」删除链路修正：前端新增分类别名归一化（如 `心韩 -> 心韓`、`娱乐 -> 娛樂`）；删除时若当前 scheduled 卡片分类未知/为 `未分類`，不再错误乐观插入 `娛樂` 列，而是仅从已排程移除，并在 API 完成后刷新 `scheduled,pending`；若分类已知则继续局部刷新 `scheduled,pending:<分类>`。
+
+验证结果:
+- 已手动验证：`心韓` 与 `消費` 分类的「返回已出未排」乐观 UI 会先出现在正确列位。
+- 本地静态检查通过：`python -m py_compile src/dashboard/live_api_sync.py` 无语法错误；`frontend/board/index.html` 仅保留既有 CSS `line-clamp` 兼容性 warning。
+
+风险/阻塞:
+- `GET /api/board/columns?include=...` 当前虽然支持局部返回，但后端 `load_board_columns()` 仍会先触发一次完整 `_refresh_live_sample_files()`，因此删除/局部刷新时仍会串行调用 `fb_published`、`fb_scheduled` 与全部分类 `posts`，耗时偏长；下一步需拆分“上游全量同步”和“局部列返回”。
+- `api_smoke_test_app.py` 侧目前仍存在“修改已排程贴文类型”不生效/不便测试的问题，尚未在本轮修复。
+- 若 CMS `fb_scheduled` / `fb_published` 既不给分类，又无法通过 `link -> CMS post` 反查成功，scheduled 行仍可能保留 `未分類`；当前删除链路已兜底为刷新全部 pending，但彻底修复仍依赖上游返回更稳定的文章关联信息。
+
+下一步:
+- 为 `/api/board/columns` 增加“跳过实时全量同步”或“按 include 仅刷新必要上游接口”的模式，缩短删除/修改后的局部刷新耗时。
+- 继续排查并修复 `api_smoke_test_app.py` 中已排程贴文类型修改能力，使 Smoke Test 与 FastAPI 看板行为一致。

@@ -343,12 +343,29 @@ def _normalize_post_type(raw: str) -> str:
     return "link"
 
 
+def _post_link_type_from_fb_item(item: dict[str, Any]) -> str:
+    """Graph API 常用 `type`（如 status=纯文字），与 CMS `post_link_type` 并存；仅后者时勿默认成 link。"""
+    direct = str(item.get("post_link_type", "")).strip()
+    if direct:
+        return _normalize_post_type(direct)
+    fb_t = str(item.get("type", "")).strip().lower()
+    # Graph 常见 status；CMS fb_scheduled 也可能直接返回 type=text
+    if fb_t in {"status", "native_templates", "text"}:
+        return "text"
+    if fb_t in {"link", "photo", "video"}:
+        return fb_t
+    if fb_t == "share":
+        return "link"
+    return "link"
+
+
 def _build_cms_reference_maps(
     posts_items: list[dict[str, Any]],
-) -> tuple[dict[str, int], dict[str, int], dict[int, str]]:
+) -> tuple[dict[str, int], dict[str, int], dict[int, str], dict[int, str]]:
     by_post_link_id: dict[str, int] = {}
     by_post_link: dict[str, int] = {}
     thumb_by_cms_id: dict[int, str] = {}
+    category_by_cms_id: dict[int, str] = {}
     for item in posts_items:
         cms_id = _safe_int(item.get("ID"))
         if cms_id <= 0:
@@ -356,6 +373,16 @@ def _build_cms_reference_maps(
         post_link = str(item.get("post_link", "")).strip()
         if post_link:
             by_post_link[post_link] = cms_id
+        categories = item.get("categories", [])
+        if isinstance(categories, list) and categories:
+            raw_cat = str(categories[0] or "").strip().replace(" ", "")
+        else:
+            raw_cat = str(item.get("category", "") or "").strip().replace(" ", "")
+        if raw_cat.startswith("@"):
+            raw_cat = raw_cat[1:]
+        cms_cat = _normalize_category(raw_cat, enable_alias_mode=True)
+        if cms_cat != "未分類":
+            category_by_cms_id[cms_id] = cms_cat
         cms_thumb = (
             str(item.get("feature_image", "")).strip()
             or str(item.get("image_url", "")).strip()
@@ -377,7 +404,7 @@ def _build_cms_reference_maps(
                     )
         if cms_thumb:
             thumb_by_cms_id[cms_id] = cms_thumb
-    return by_post_link_id, by_post_link, thumb_by_cms_id
+    return by_post_link_id, by_post_link, thumb_by_cms_id, category_by_cms_id
 
 
 def _extract_fan_page_entry(item: dict[str, Any], target_fan_page_id: str) -> dict[str, Any]:
@@ -434,24 +461,35 @@ def _to_published_rows(
     enable_alias_mode: bool,
     cms_id_by_post_link_id: dict[str, int] | None = None,
     cms_id_by_post_link: dict[str, int] | None = None,
+    category_by_cms_id: dict[int, str] | None = None,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     cms_id_by_post_link_id = cms_id_by_post_link_id or {}
     cms_id_by_post_link = cms_id_by_post_link or {}
+    category_by_cms_id = category_by_cms_id or {}
     for item in items:
         insights = item.get("insights", {}) if isinstance(item.get("insights", {}), dict) else {}
         title = str(item.get("message", "")).strip() or str(item.get("id", "Untitled")).strip() or "Untitled"
         post_link_id = _derive_post_link_id(item)
-        post_link = str(item.get("permalink_url", "")).strip() or str(item.get("link", "")).strip()
+        permalink = str(item.get("permalink_url", "")).strip()
+        article_link = str(item.get("link", "")).strip()
+        post_link = permalink or article_link
         cms_post_id = cms_id_by_post_link_id.get(post_link_id, 0) if post_link_id else 0
-        if cms_post_id <= 0 and post_link:
-            cms_post_id = cms_id_by_post_link.get(post_link, 0)
+        if cms_post_id <= 0:
+            for candidate in (article_link, permalink):
+                if candidate:
+                    cms_post_id = cms_id_by_post_link.get(candidate, 0)
+                if cms_post_id > 0:
+                    break
         if cms_post_id <= 0:
             cms_post_id = _derive_post_id(item)
+        category = _normalize_category(str(item.get("category", "未分類")), enable_alias_mode)
+        if category == "未分類" and cms_post_id > 0:
+            category = str(category_by_cms_id.get(cms_post_id, category)).strip() or category
         rows.append(
             {
                 "title": title,
-                "category": _normalize_category(str(item.get("category", "未分類")), enable_alias_mode),
+                "category": category,
                 "thumbnail": str(item.get("full_picture", "")).strip(),
                 "Post URL": post_link,
                 "publish_time": str(item.get("created_time", "")).strip(),
@@ -459,7 +497,7 @@ def _to_published_rows(
                 "post_id": cms_post_id,
                 "item_id": str(cms_post_id) if cms_post_id > 0 else "",
                 "post_link_id": post_link_id,
-                "post_link_type": _normalize_post_type(str(item.get("post_link_type", "")).strip()),
+                "post_link_type": _post_link_type_from_fb_item(item),
                 "post_message": str(item.get("message", "")).strip(),
                 "image_url": str(item.get("image_url", "")).strip()
                 or str(item.get("full_picture", "")).strip(),
@@ -477,6 +515,7 @@ def _to_scheduled_rows(
     cms_id_by_post_link_id: dict[str, int] | None = None,
     cms_id_by_post_link: dict[str, int] | None = None,
     thumb_by_cms_id: dict[int, str] | None = None,
+    category_by_cms_id: dict[int, str] | None = None,
     pending_thumb_by_post_id: dict[int, str] | None = None,
     pending_thumb_by_title: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
@@ -485,6 +524,7 @@ def _to_scheduled_rows(
     cms_id_by_post_link_id = cms_id_by_post_link_id or {}
     cms_id_by_post_link = cms_id_by_post_link or {}
     thumb_by_cms_id = thumb_by_cms_id or {}
+    category_by_cms_id = category_by_cms_id or {}
     pending_thumb_by_post_id = pending_thumb_by_post_id or {}
     pending_thumb_by_title = pending_thumb_by_title or {}
     for item in items:
@@ -493,10 +533,16 @@ def _to_scheduled_rows(
         current_thumb = str(item.get("full_picture", "")).strip() or str(item.get("image_url", "")).strip()
         if not current_thumb and current_link_id:
             current_thumb = str(thumb_fallback_map.get(current_link_id, "")).strip()
-        current_link = str(item.get("permalink_url", "")).strip() or str(item.get("link", "")).strip()
+        permalink = str(item.get("permalink_url", "")).strip()
+        article_link = str(item.get("link", "")).strip()
+        current_link = permalink or article_link
         cms_post_id = cms_id_by_post_link_id.get(current_link_id, 0) if current_link_id else 0
-        if cms_post_id <= 0 and current_link:
-            cms_post_id = cms_id_by_post_link.get(current_link, 0)
+        if cms_post_id <= 0:
+            for candidate in (article_link, permalink):
+                if candidate:
+                    cms_post_id = cms_id_by_post_link.get(candidate, 0)
+                if cms_post_id > 0:
+                    break
         if cms_post_id <= 0:
             cms_post_id = _derive_post_id(item)
         if not current_thumb and cms_post_id > 0:
@@ -505,10 +551,13 @@ def _to_scheduled_rows(
             current_thumb = str(pending_thumb_by_post_id.get(cms_post_id, "")).strip()
         if not current_thumb:
             current_thumb = str(pending_thumb_by_title.get(title, "")).strip()
+        category = _normalize_category(str(item.get("category", "未分類")), enable_alias_mode)
+        if category == "未分類" and cms_post_id > 0:
+            category = str(category_by_cms_id.get(cms_post_id, category)).strip() or category
         rows.append(
             {
                 "title": title,
-                "category": _normalize_category(str(item.get("category", "未分類")), enable_alias_mode),
+                "category": category,
                 "thumbnail": current_thumb,
                 "Post URL": current_link,
                 "publish_time": str(item.get("scheduled_publish_time", "")).strip()
@@ -517,7 +566,7 @@ def _to_scheduled_rows(
                 "post_id": cms_post_id,
                 "item_id": str(cms_post_id) if cms_post_id > 0 else "",
                 "post_link_id": current_link_id,
-                "post_link_type": _normalize_post_type(str(item.get("post_link_type", "")).strip()),
+                "post_link_type": _post_link_type_from_fb_item(item),
                 "post_message": str(item.get("message", "")).strip(),
                 "image_url": str(item.get("image_url", "")).strip() or current_thumb,
                 "post_mp4_url": str(item.get("post_mp4_url", "")).strip(),
@@ -700,12 +749,15 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
                     seen_pending.add(item_id)
                     pending_rows_all.append(row)
 
-        cms_id_by_post_link_id, cms_id_by_post_link, thumb_by_cms_id = _build_cms_reference_maps(posts_items_all)
+        cms_id_by_post_link_id, cms_id_by_post_link, thumb_by_cms_id, category_by_cms_id = _build_cms_reference_maps(
+            posts_items_all
+        )
         published_rows = _to_published_rows(
             _extract_data_list(published_payload),
             enable_alias_mode=enable_category_alias_mode,
             cms_id_by_post_link_id=cms_id_by_post_link_id,
             cms_id_by_post_link=cms_id_by_post_link,
+            category_by_cms_id=category_by_cms_id,
         )
         scheduled_thumb_fallback_map = _build_scheduled_thumb_map(pending_rows_all)
         pending_thumb_by_post_id, pending_thumb_by_title = _build_pending_thumb_maps(pending_rows_all)
@@ -716,6 +768,7 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
             cms_id_by_post_link_id=cms_id_by_post_link_id,
             cms_id_by_post_link=cms_id_by_post_link,
             thumb_by_cms_id=thumb_by_cms_id,
+            category_by_cms_id=category_by_cms_id,
             pending_thumb_by_post_id=pending_thumb_by_post_id,
             pending_thumb_by_title=pending_thumb_by_title,
         )
