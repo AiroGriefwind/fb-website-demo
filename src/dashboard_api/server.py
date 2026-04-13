@@ -116,8 +116,14 @@ def get_sidebar_settings() -> dict[str, Any]:
     current = sessions.get("default", {})
     if not isinstance(current, dict):
         current = {}
+    try:
+        _eg = int(current.get("cfg_early_publish_guard_slots", current.get("early_publish_guard_slots", 2)) or 2)
+    except Exception:
+        _eg = 2
+    _eg = max(1, min(5, _eg))
     return {
         "schedule_window_minutes": int(current.get("schedule_window_minutes", DEFAULT_SCHEDULE_WINDOW_MINUTES)),
+        "early_publish_guard_slots": _eg,
         "enable_category_alias_mode": bool(current.get("cfg_enable_category_alias_mode", False)),
         "enable_board_fallback_mode": bool(current.get("cfg_enable_board_fallback_mode", False)),
         "target_fan_page_id": str(current.get("cfg_target_fan_page_id", "350584865140118")).strip() or "350584865140118",
@@ -129,9 +135,16 @@ def get_sidebar_settings() -> dict[str, Any]:
 def put_sidebar_settings(payload: dict[str, Any]) -> dict[str, Any]:
     raw = _load_settings_state()
     sessions = raw.get("sessions", {}) if isinstance(raw.get("sessions", {}), dict) else {}
+    try:
+        _eg_put = int(payload.get("early_publish_guard_slots", 2) or 2)
+    except Exception:
+        _eg_put = 2
+    _eg_put = max(1, min(5, _eg_put))
     sessions["default"] = {
         "cfg_schedule_window_minutes": int(payload.get("schedule_window_minutes", DEFAULT_SCHEDULE_WINDOW_MINUTES)),
         "schedule_window_minutes": int(payload.get("schedule_window_minutes", DEFAULT_SCHEDULE_WINDOW_MINUTES)),
+        "cfg_early_publish_guard_slots": _eg_put,
+        "early_publish_guard_slots": _eg_put,
         "cfg_enable_category_alias_mode": bool(payload.get("enable_category_alias_mode", False)),
         "cfg_enable_board_fallback_mode": bool(payload.get("enable_board_fallback_mode", False)),
         "cfg_target_fan_page_id": str(payload.get("target_fan_page_id", "350584865140118")).strip() or "350584865140118",
@@ -166,6 +179,7 @@ def action_publish(payload: PublishRequest) -> dict:
         post_message=str(payload.post_message or ""),
         post_link_type=str(payload.post_link_type or "link"),
         image_url=str(payload.image_url or ""),
+        immediate_publish=bool(payload.immediate_publish),
     )
     if not bool(result.get("ok")):
         raise HTTPException(status_code=400, detail=str(result.get("message", "publish failed")))

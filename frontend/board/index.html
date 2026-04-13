@@ -430,6 +430,12 @@
         gap: 10px;
         margin-top: 12px;
       }
+      .modal-schedule-footer-left {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
       .modal-schedule-footer .actions { margin-top: 0; }
       .schedule-photo-preview {
         max-width: 100%;
@@ -630,6 +636,14 @@
                 <option value="20">20</option>
                 <option value="30">30</option>
               </select>
+              <label class="tiny" style="display:block;margin-top:8px;">即出保护：禁止普通排程的最近时间窗口数 N（默认 2）</label>
+              <select class="field" x-model="settings.early_publish_guard_slots">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+              </select>
               <label class="tiny"><input type="checkbox" x-model="settings.enable_category_alias_mode" /> 启用分类归一化</label>
               <label class="tiny" style="display:block; margin-top:6px;"><input type="checkbox" x-model="settings.enable_board_fallback_mode" /> 启用看板渲染兜底</label>
               <label class="tiny" style="display:block; margin-top:8px;">测试 Fan Page ID</label>
@@ -819,24 +833,27 @@
               @input="dialogs.schedule.urlHint = ''"
             ></textarea>
             <div class="row">
-              <select class="field" x-model.number="forms.schedule.hour" @change="refreshScheduleSlots()">
+              <select class="field" x-model.number="forms.schedule.hour" @change="refreshScheduleSlots()" :disabled="forms.schedule.immediate_publish">
                 <template x-for="h in scheduleSlots.hours" :key="'sh_'+h"><option :value="h" x-text="String(h).padStart(2,'0')"></option></template>
               </select>
-              <select class="field" x-model.number="forms.schedule.minute">
+              <select class="field" x-model.number="forms.schedule.minute" :disabled="forms.schedule.immediate_publish">
                 <template x-for="m in scheduleSlots.minutes" :key="'sm_'+m"><option :value="m" x-text="String(m).padStart(2,'0')"></option></template>
               </select>
             </div>
             <div class="tiny" style="margin:6px 0 4px;">日期（香港时间，日 / 月 / 年）</div>
             <div class="row">
-              <select class="field" x-model.number="forms.schedule.day" @change="_clampScheduleFormDate()">
+              <select class="field" x-model.number="forms.schedule.day" @change="_clampScheduleFormDate()" :disabled="forms.schedule.immediate_publish">
                 <template x-for="d in scheduleDayOptions()" :key="'sd_'+d"><option :value="d" x-text="String(d).padStart(2,'0')"></option></template>
               </select>
-              <select class="field" x-model.number="forms.schedule.month" @change="_clampScheduleFormDate()">
+              <select class="field" x-model.number="forms.schedule.month" @change="_clampScheduleFormDate()" :disabled="forms.schedule.immediate_publish">
                 <template x-for="m in scheduleMonthOptions()" :key="'smo_'+m"><option :value="m" x-text="String(m).padStart(2,'0')"></option></template>
               </select>
-              <select class="field" x-model.number="forms.schedule.year" @change="_clampScheduleFormDate()">
+              <select class="field" x-model.number="forms.schedule.year" @change="_clampScheduleFormDate()" :disabled="forms.schedule.immediate_publish">
                 <template x-for="y in scheduleYearOptions()" :key="'sy_'+y"><option :value="y" x-text="y"></option></template>
               </select>
+            </div>
+            <div class="hint-text" x-show="forms.schedule.immediate_publish" x-cloak>
+              選擇即出會立刻發布貼文。請確認發布內容。
             </div>
             <label class="tiny" style="display:block;margin-top:10px;">贴文类型</label>
             <select class="field" x-model="forms.schedule.post_link_type" @change="onSchedulePostTypeChange()">
@@ -866,18 +883,29 @@
             <div class="error-text" x-show="dialogs.schedule.error" x-text="dialogs.schedule.error"></div>
             <div class="hint-text" x-show="dialogs.schedule.urlHint" x-text="dialogs.schedule.urlHint"></div>
             <div class="modal-schedule-footer">
-              <button
-                type="button"
-                class="btn"
-                :disabled="forms.schedule.post_link_type === 'link'"
-                :title="forms.schedule.post_link_type === 'link' ? 'link 类型使用贴文链接，无需追加 URL' : '在正文下一行追加网站贴文 URL'"
-                @click="appendSchedulePostLink()"
-              >
-                Add URL
-              </button>
+              <div class="modal-schedule-footer-left">
+                <button
+                  type="button"
+                  class="btn"
+                  :class="{ primary: forms.schedule.immediate_publish }"
+                  @click="toggleScheduleImmediate()"
+                  :title="forms.schedule.immediate_publish ? '已开启即出，将按确认时刻取最近可用排程格' : '即出：确认时使用当前时刻对应的最近排程时间'"
+                >
+                  即出
+                </button>
+                <button
+                  type="button"
+                  class="btn"
+                  :disabled="forms.schedule.post_link_type === 'link'"
+                  :title="forms.schedule.post_link_type === 'link' ? 'link 类型使用贴文链接，无需追加 URL' : '在正文下一行追加网站贴文 URL'"
+                  @click="appendSchedulePostLink()"
+                >
+                  Add URL
+                </button>
+              </div>
               <div class="actions">
                 <button type="button" class="btn" @click="closeDialog('schedule')">取消</button>
-                <button type="button" class="btn primary" @click="confirmSchedule()">确认排程</button>
+                <button type="button" class="btn primary" @click="confirmSchedule()" x-text="forms.schedule.immediate_publish ? '即刻發佈' : '确认排程'"></button>
               </div>
             </div>
           </div>
@@ -896,24 +924,27 @@
               @input="dialogs.update.urlHint = ''"
             ></textarea>
             <div class="row">
-              <select class="field" x-model.number="forms.update.hour" @change="refreshUpdateSlots()">
+              <select class="field" x-model.number="forms.update.hour" @change="refreshUpdateSlots()" :disabled="forms.update.immediate_publish">
                 <template x-for="h in updateSlots.hours" :key="'uh_'+h"><option :value="h" x-text="String(h).padStart(2,'0')"></option></template>
               </select>
-              <select class="field" x-model.number="forms.update.minute">
+              <select class="field" x-model.number="forms.update.minute" :disabled="forms.update.immediate_publish">
                 <template x-for="m in updateSlots.minutes" :key="'um_'+m"><option :value="m" x-text="String(m).padStart(2,'0')"></option></template>
               </select>
             </div>
             <div class="tiny" style="margin:6px 0 4px;">日期（香港时间，日 / 月 / 年）</div>
             <div class="row">
-              <select class="field" x-model.number="forms.update.day" @change="_clampUpdateFormDate()">
+              <select class="field" x-model.number="forms.update.day" @change="_clampUpdateFormDate()" :disabled="forms.update.immediate_publish">
                 <template x-for="d in updateDayOptions()" :key="'ud_'+d"><option :value="d" x-text="String(d).padStart(2,'0')"></option></template>
               </select>
-              <select class="field" x-model.number="forms.update.month" @change="_clampUpdateFormDate()">
+              <select class="field" x-model.number="forms.update.month" @change="_clampUpdateFormDate()" :disabled="forms.update.immediate_publish">
                 <template x-for="m in updateMonthOptions()" :key="'umo_'+m"><option :value="m" x-text="String(m).padStart(2,'0')"></option></template>
               </select>
-              <select class="field" x-model.number="forms.update.year" @change="_clampUpdateFormDate()">
+              <select class="field" x-model.number="forms.update.year" @change="_clampUpdateFormDate()" :disabled="forms.update.immediate_publish">
                 <template x-for="y in updateYearOptions()" :key="'uy_'+y"><option :value="y" x-text="y"></option></template>
               </select>
+            </div>
+            <div class="hint-text" x-show="forms.update.immediate_publish" x-cloak>
+              選擇即出會立刻發布貼文。請確認發布內容。
             </div>
             <label class="tiny" style="display:block;margin-top:10px;">贴文类型</label>
             <select class="field" x-model="forms.update.post_link_type" @change="onUpdatePostTypeChange()">
@@ -938,19 +969,43 @@
             <div class="error-text" x-show="dialogs.update.error" x-text="dialogs.update.error"></div>
             <div class="hint-text" x-show="dialogs.update.urlHint" x-text="dialogs.update.urlHint"></div>
             <div class="modal-schedule-footer">
-              <button
-                type="button"
-                class="btn"
-                :disabled="forms.update.post_link_type === 'link'"
-                :title="forms.update.post_link_type === 'link' ? 'link 类型使用贴文链接，无需追加 URL' : '在正文下一行追加网站贴文 URL'"
-                @click="appendUpdatePostLink()"
-              >
-                Add URL
-              </button>
+              <div class="modal-schedule-footer-left">
+                <button
+                  type="button"
+                  class="btn"
+                  :class="{ primary: forms.update.immediate_publish }"
+                  @click="toggleUpdateImmediate()"
+                  :title="forms.update.immediate_publish ? '已开启即出' : '即出：确认时使用当前时刻对应的最近排程时间'"
+                >
+                  即出
+                </button>
+                <button
+                  type="button"
+                  class="btn"
+                  :disabled="forms.update.post_link_type === 'link'"
+                  :title="forms.update.post_link_type === 'link' ? 'link 类型使用贴文链接，无需追加 URL' : '在正文下一行追加网站贴文 URL'"
+                  @click="appendUpdatePostLink()"
+                >
+                  Add URL
+                </button>
+              </div>
               <div class="actions">
                 <button type="button" class="btn" @click="closeDialog('update')">返回</button>
-                <button type="button" class="btn primary" @click="confirmUpdate()">确认修改</button>
+                <button type="button" class="btn primary" @click="confirmUpdate()" x-text="forms.update.immediate_publish ? '即刻發佈' : '确认修改'"></button>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-mask" x-show="dialogs.nearImmediate.open" x-transition.opacity>
+          <div class="modal">
+            <h3>發佈時間過近</h3>
+            <div class="tiny" style="margin:10px 0 14px;line-height:1.5;">
+              發佈時間過近，是否使用即出？
+            </div>
+            <div class="actions">
+              <button type="button" class="btn" @click="closeNearImmediatePrompt()">取消</button>
+              <button type="button" class="btn primary" @click="confirmNearImmediateChoice()">使用即出</button>
             </div>
           </div>
         </div>
@@ -992,6 +1047,7 @@
           apiLog: [],
           settings: {
             schedule_window_minutes: 10,
+            early_publish_guard_slots: "2",
             enable_category_alias_mode: false,
             enable_board_fallback_mode: false,
             target_fan_page_id: "350584865140118",
@@ -1000,6 +1056,7 @@
             schedule: { open: false, item: null, error: "", urlHint: "" },
             update: { open: false, item: null, error: "", urlHint: "" },
             delete: { open: false, item: null, error: "" },
+            nearImmediate: { open: false, scope: "" },
           },
           forms: {
             schedule: {
@@ -1011,6 +1068,7 @@
               post_message: "",
               post_link_type: "link",
               image_url: "",
+              immediate_publish: false,
             },
             update: {
               year: 0,
@@ -1021,6 +1079,7 @@
               post_link_type: "link",
               post_message: "",
               image_url: "",
+              immediate_publish: false,
             },
           },
           scheduleSlots: { hours: [], minutes: [] },
@@ -1241,7 +1300,14 @@
             try {
               const res = await this.apiFetch("GET sidebar/settings", "/api/sidebar/settings", {});
               if (!res.ok) throw new Error("settings load failed");
-              this.settings = await res.json();
+              const data = await res.json();
+              const egRaw = data.early_publish_guard_slots ?? this.settings.early_publish_guard_slots ?? "2";
+              const egN = Math.min(5, Math.max(1, parseInt(String(egRaw), 10) || 2));
+              this.settings = {
+                ...this.settings,
+                ...data,
+                early_publish_guard_slots: String(egN),
+              };
             } catch (e) {
               // keep defaults
             }
@@ -1430,6 +1496,7 @@
               post_message: defaultMsg,
               post_link_type: ptype,
               image_url: defImg,
+              immediate_publish: false,
             };
             this.dialogs.schedule = { open: true, item: item, error: "", urlHint: "" };
             this._clampScheduleFormDate();
@@ -1438,11 +1505,28 @@
             const item = this.dialogs.schedule.item;
             if (!item) return;
             this.dialogs.schedule.error = "";
-            const when = this.buildTimeString(this.forms.schedule);
-            const cat = String(item.category || "");
             const pickedMsg = String(this.forms.schedule.post_message || "").trim();
             const pickedType = String(this.forms.schedule.post_link_type || "link").toLowerCase();
             const pickedImage = String(this.forms.schedule.image_url || "").trim();
+            const immediate = Boolean(this.forms.schedule.immediate_publish);
+            let when = "";
+            if (immediate) {
+              const p = this._nextImmediateHktParts();
+              when = this.buildTimeString({
+                year: p.year,
+                month: p.month,
+                day: p.day,
+                hour: p.hour,
+                minute: p.minute,
+              });
+            } else {
+              when = this.buildTimeString(this.forms.schedule);
+              if (this._isFormPickedTooClose(this.forms.schedule)) {
+                this.dialogs.nearImmediate = { open: true, scope: "schedule" };
+                return;
+              }
+            }
+            const cat = String(item.category || "");
             if (!when) {
               this.dialogs.schedule.error = "时间格式错误";
               return;
@@ -1503,6 +1587,7 @@
                 post_message: pickedMsg,
                 post_link_type: pickedType,
                 image_url: pickedType === "photo" ? pickedImage : "",
+                immediate_publish: immediate,
               };
               const data = await this.callAction("/api/actions/publish", payload, { internal: true });
               const include = "scheduled" + (cat ? (",pending:" + cat) : ",pending");
@@ -1544,6 +1629,7 @@
               post_link_type: ptype,
               post_message: String(item.post_message || item.title || "").trim(),
               image_url: defImg,
+              immediate_publish: false,
             };
             this.dialogs.update = { open: true, item: item, error: "", urlHint: "" };
             this._clampUpdateFormDate();
@@ -1552,10 +1638,27 @@
             const item = this.dialogs.update.item;
             if (!item) return;
             this.dialogs.update.error = "";
-            const when = this.buildTimeString(this.forms.update);
             const pickedType = String(this.forms.update.post_link_type || "link").toLowerCase();
             const pickedMsg = String(this.forms.update.post_message || "").trim();
             const pickedImage = String(this.forms.update.image_url || "").trim();
+            const immediate = Boolean(this.forms.update.immediate_publish);
+            let when = "";
+            if (immediate) {
+              const p = this._nextImmediateHktParts();
+              when = this.buildTimeString({
+                year: p.year,
+                month: p.month,
+                day: p.day,
+                hour: p.hour,
+                minute: p.minute,
+              });
+            } else {
+              when = this.buildTimeString(this.forms.update);
+              if (this._isFormPickedTooClose(this.forms.update)) {
+                this.dialogs.nearImmediate = { open: true, scope: "update" };
+                return;
+              }
+            }
             if (!when) {
               this.dialogs.update.error = "时间格式错误";
               return;
@@ -1625,6 +1728,7 @@
                   enforce_time_validation: true,
                   target_action_key: "plink:" + String(item.post_link_id || ""),
                   window_minutes: Number(this.settings.schedule_window_minutes || 10),
+                  immediate_publish: immediate,
                 },
                 { internal: true }
               );
@@ -1707,13 +1811,67 @@
           closeDialog(kind) {
             if (kind === "schedule") {
               this.dialogs.schedule = { open: false, item: null, error: "", urlHint: "" };
+              if (this.forms.schedule) this.forms.schedule.immediate_publish = false;
               return;
             }
             if (kind === "update") {
               this.dialogs.update = { open: false, item: null, error: "", urlHint: "" };
+              if (this.forms.update) this.forms.update.immediate_publish = false;
               return;
             }
             this.dialogs[kind] = { open: false, item: null, error: "" };
+          },
+          closeNearImmediatePrompt() {
+            this.dialogs.nearImmediate = { open: false, scope: "" };
+          },
+          confirmNearImmediateChoice() {
+            const scope = this.dialogs.nearImmediate.scope;
+            this.dialogs.nearImmediate = { open: false, scope: "" };
+            if (scope === "schedule") {
+              this.forms.schedule.immediate_publish = true;
+            } else if (scope === "update") {
+              this.forms.update.immediate_publish = true;
+            }
+          },
+          toggleScheduleImmediate() {
+            this.forms.schedule.immediate_publish = !this.forms.schedule.immediate_publish;
+            if (!this.forms.schedule.immediate_publish) this._clampScheduleFormDate();
+          },
+          toggleUpdateImmediate() {
+            this.forms.update.immediate_publish = !this.forms.update.immediate_publish;
+            if (!this.forms.update.immediate_publish) this._clampUpdateFormDate();
+          },
+          _earlyGuardMs() {
+            const step = Number(this.settings.schedule_window_minutes || 10);
+            const n = Math.min(5, Math.max(1, parseInt(String(this.settings.early_publish_guard_slots ?? "2"), 10) || 2));
+            return n * step * 60000;
+          },
+          _isFormPickedTooClose(form) {
+            if (!form || form.immediate_publish) return false;
+            const when = this.buildTimeString(form);
+            const picked = this.parseHktWallTimeToDate(when);
+            if (!picked) return false;
+            return picked.getTime() <= Date.now() + this._earlyGuardMs();
+          },
+          _nextImmediateHktParts() {
+            const step = Number(this.settings.schedule_window_minutes || 10);
+            let p = this._hktPartsFromInstant(Date.now());
+            let parts = this._roundUpHktParts(p, step);
+            for (let i = 0; i < 400; i++) {
+              const whenStr = this.buildTimeString({
+                year: parts.year,
+                month: parts.month,
+                day: parts.day,
+                hour: parts.hour,
+                minute: parts.minute,
+              });
+              const t = this.parseHktWallTimeToDate(whenStr);
+              if (t && t.getTime() > Date.now()) return parts;
+              const baseMs = t ? t.getTime() : Date.now();
+              p = this._hktPartsFromInstant(baseMs + step * 60000);
+              parts = this._roundUpHktParts(p, step);
+            }
+            return parts;
           },
           async toggleLock(item) {
             if (this.mode === "live" && this.actionBusy) {

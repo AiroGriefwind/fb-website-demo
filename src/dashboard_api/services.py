@@ -14,7 +14,7 @@ from src.dashboard.config import (
     SCHEDULED_FILE,
 )
 from src.dashboard.data_utils import read_json_list, write_json_list
-from src.dashboard.media_utils import parse_publish_time, to_utc_iso_z
+from src.dashboard.media_utils import parse_publish_time, round_up_to_window, to_utc_iso_z
 from src.dashboard_api.cms_client import CmsActionClient
 
 
@@ -46,6 +46,25 @@ def _extract_action_ids(item: dict[str, Any]) -> tuple[int, str]:
 
 def _to_hkt_input_time(dt_hkt: datetime) -> str:
     return dt_hkt.strftime("%Y-%m-%dT%H:%M")
+
+
+def _early_publish_guard_slots(default_session: dict[str, Any]) -> int:
+    raw = default_session.get("cfg_early_publish_guard_slots", default_session.get("early_publish_guard_slots", 2))
+    try:
+        n = int(raw)
+    except Exception:
+        n = 2
+    return max(1, min(5, n))
+
+
+def _next_immediate_publish_dt(now_hkt: datetime, window_minutes: int) -> datetime:
+    """即出：取当前时刻之后、对齐排程窗口的最早一格（与 slot 规划一致）。"""
+    step = int(window_minutes) if int(window_minutes) > 0 else 10
+    now_floor = now_hkt.replace(second=0, microsecond=0)
+    slot = round_up_to_window(now_floor, step)
+    if slot <= now_floor:
+        slot = slot + timedelta(minutes=step)
+    return slot.replace(second=0, microsecond=0)
 
 
 def _validate_update_time_and_window(
@@ -302,6 +321,7 @@ def publish_from_pending(
     post_message: str = "",
     post_link_type: str = "",
     image_url: str = "",
+    immediate_publish: bool = False,
 ) -> dict[str, Any]:
     pending_rows = read_json_list(PENDING_FILE)
     scheduled_rows = read_json_list(SCHEDULED_FILE)
@@ -309,13 +329,22 @@ def publish_from_pending(
     if not target:
         return {"ok": False, "message": "pending item not found"}
 
-    try:
-        schedule_dt = datetime.strptime(schedule_time.strip(), "%Y-%m-%dT%H:%M").replace(tzinfo=HKT_TZ)
-    except ValueError:
-        return {"ok": False, "message": "invalid schedule_time format, expected YYYY-MM-DDTHH:mm"}
+    default_session = _read_default_session_settings()
     now_hkt = datetime.now(HKT_TZ).replace(second=0, microsecond=0)
-    if schedule_dt <= now_hkt:
-        return {"ok": False, "message": "cannot schedule in the past"}
+    step = int(window_minutes) if int(window_minutes) > 0 else 10
+    if immediate_publish:
+        schedule_dt = _next_immediate_publish_dt(now_hkt, window_minutes)
+    else:
+        try:
+            schedule_dt = datetime.strptime(schedule_time.strip(), "%Y-%m-%dT%H:%M").replace(tzinfo=HKT_TZ)
+        except ValueError:
+            return {"ok": False, "message": "invalid schedule_time format, expected YYYY-MM-DDTHH:mm"}
+        if schedule_dt <= now_hkt:
+            return {"ok": False, "message": "cannot schedule in the past"}
+        guard_slots = _early_publish_guard_slots(default_session)
+        guard_until = now_hkt + timedelta(minutes=guard_slots * step)
+        if schedule_dt <= guard_until:
+            return {"ok": False, "message": "發佈時間過近，請使用即出"}
 
     msg = str(post_message or "").strip()
     if not msg:
@@ -371,18 +400,30 @@ def publish_from_pending(
 
 
 def update_scheduled(payload: dict[str, Any]) -> dict[str, Any]:
-    picked_time = str(payload.get("post_link_time", "")).strip()
-    try:
-        picked_dt = datetime.strptime(picked_time, "%Y-%m-%dT%H:%M").replace(tzinfo=HKT_TZ)
-    except ValueError:
-        return {"ok": False, "message": "invalid time format, expected YYYY-MM-DDTHH:mm (HKT)"}
+    immediate = bool(payload.get("immediate_publish", False))
+    window_minutes = int(payload.get("window_minutes", 10) or 10)
+    now_hkt = datetime.now(HKT_TZ).replace(second=0, microsecond=0)
+    default_session = _read_default_session_settings()
+    step = int(window_minutes) if int(window_minutes) > 0 else 10
+    if immediate:
+        picked_dt = _next_immediate_publish_dt(now_hkt, window_minutes)
+    else:
+        picked_time = str(payload.get("post_link_time", "")).strip()
+        try:
+            picked_dt = datetime.strptime(picked_time, "%Y-%m-%dT%H:%M").replace(tzinfo=HKT_TZ)
+        except ValueError:
+            return {"ok": False, "message": "invalid time format, expected YYYY-MM-DDTHH:mm (HKT)"}
+        guard_slots = _early_publish_guard_slots(default_session)
+        guard_until = now_hkt + timedelta(minutes=guard_slots * step)
+        if picked_dt <= guard_until:
+            return {"ok": False, "message": "發佈時間過近，請使用即出"}
 
     enforce_window = bool(payload.get("enforce_time_validation", True))
     if enforce_window:
         ok_time, msg_time = _validate_update_time_and_window(
             picked_dt=picked_dt,
             now_hkt=datetime.now(HKT_TZ),
-            window_minutes=int(payload.get("window_minutes", 10) or 10),
+            window_minutes=window_minutes,
             scheduled_items=_collect_time_sorted_items(read_json_list(SCHEDULED_FILE)),
             target_action_key=str(payload.get("target_action_key", "")).strip(),
         )

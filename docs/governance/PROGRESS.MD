@@ -1418,3 +1418,23 @@
 
 下一步:
 - 视产品需要，可为「仅前两列筛选」增加空态提示（例如「当前栏目下暂无已排程」）。
+
+日期时间(HKT): 2026-04-13（续三）
+负责人/LLM: wangz / GPT-5.4
+分支/worktree: feature/bot-ui-ops（本仓库）
+完成内容:
+- [本仓库] 看板「即出」（立刻发布语义）：`frontend/board/index.html` 在排程弹窗与修改排程弹窗左下角增加「即出」开关；开启后时间/日期下拉禁用，主按钮文案改为「即刻發佈」；展示提示「選擇即出會立刻發布貼文。請確認發布內容。」；「即出」与「Add URL」同组左对齐，避免中间留白。
+- [本仓库] 普通排程过近拦截：所选时间落在「当前起 N 个排程窗口」内时弹出「發佈時間過近，是否使用即出？」；用户确认「使用即出」后**仅勾选即出并回到原弹窗**，不自动提交；N 默认 2，侧栏以 **1–5 下拉** 配置（`early_publish_guard_slots`），前端用字符串绑定以修复 `<select>` 与 API 数字回写后的显示一致性问题；**不在 `<select>` 内使用 `<template x-for>`**（非法 HTML 结构会导致选项/选中异常）。
+- [本仓库] 后端对齐：`src/dashboard_api/schemas.py` 的 `PublishRequest` / `UpdateRequest` 增加 `immediate_publish`；`src/dashboard_api/services.py` 对非即出排程做「过近」校验（与 N、排程窗口一致），即出时用 `_next_immediate_publish_dt`；`src/dashboard_api/server.py` 的 `GET/PUT /api/sidebar/settings` 持久化 `early_publish_guard_slots`（clamp 1–5），动作入口传入 `immediate_publish`。
+- [本仓库] 侧栏「保存设置」原理（便于后人理解）：前端 `saveSettings()` 将当前 `settings` 对象 `JSON.stringify` 后 `PUT /api/sidebar/settings`；后端读取并合并写入仓库内 **`data/samples/dashboard_settings_state.json`**（`SETTINGS_STATE_FILE`），以 JSON 文件形式持久化默认会话键（含 `cfg_schedule_window_minutes`、`cfg_early_publish_guard_slots`、分类/兜底开关、测试 Fan Page ID 等）；下次进入页面时 `GET /api/sidebar/settings` 读该文件并返回，前端 `loadSettings()` 合并到 Alpine 状态。Live/Mock 与看板数据文件分离，仅侧栏这几项走该 state 文件。
+
+验证结果:
+- `python -m py_compile src/dashboard_api/server.py src/dashboard_api/services.py src/dashboard_api/schemas.py` 通过。
+- 手测：侧栏 N 下拉保存后再加载与显示一致；即出过近提示确认后回到弹窗且已勾选即出。
+
+风险/阻塞:
+- 「即出」实际发布时间以后端在请求处理时刻计算的下一可用窗口为准，与前端预览可能存在极短漂移；属预期。
+- 若 `dashboard_settings_state.json` 被手工破坏，GET 可能回退为代码内默认值，需保留有效 JSON。
+
+下一步:
+- 按需将 demo 部署环境与 `dashboard_settings_state.json` 的备份/迁移纳入运维说明。
