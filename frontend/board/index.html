@@ -1173,9 +1173,14 @@
             const skipBoardLoading = o.skipBoardLoading === true;
             if (!skipBoardLoading) this.loading = true;
             try {
-              const query = includeExpr ? ("?include=" + encodeURIComponent(includeExpr)) : "";
+              const params = new URLSearchParams();
+              if (includeExpr) params.set("include", includeExpr);
+              if (o.skipSync === true) params.set("sync", "false");
+              const query = params.toString() ? ("?" + params.toString()) : "";
               const path = "/api/board/columns" + query;
-              const kind = includeExpr ? "GET board/columns（局部）" : "GET board/columns（全量）";
+              const kind = includeExpr
+                ? (o.skipSync === true ? "GET board/columns（局部，无同步）" : "GET board/columns（局部）")
+                : (o.skipSync === true ? "GET board/columns（全量，无同步）" : "GET board/columns（全量）");
               const res = await this.apiFetch(kind, path, {});
               if (!res.ok) throw new Error("load columns failed");
               const data = await res.json();
@@ -1502,7 +1507,7 @@
               const data = await this.callAction("/api/actions/publish", payload, { internal: true });
               const include = "scheduled" + (cat ? (",pending:" + cat) : ",pending");
               this.message = "正在同步已排程与「" + (cat || "全部") + "」已出未排…";
-              await this.fetchColumns(include, { skipBoardLoading: true, skipDefaultMessage: true, rethrow: true });
+              await this.fetchColumns(include, { skipBoardLoading: true, skipDefaultMessage: true, rethrow: true, skipSync: true });
               const impact = data?.impact_report || {};
               const shifted = Array.isArray(impact.shifted_rows) ? impact.shifted_rows.length : 0;
               const locked = Array.isArray(impact.skipped_locked_rows) ? impact.skipped_locked_rows.length : 0;
@@ -1624,7 +1629,7 @@
                 { internal: true }
               );
               this.message = "正在刷新已排程列…";
-              await this.fetchColumns("scheduled", { skipBoardLoading: true, skipDefaultMessage: true, rethrow: true });
+              await this.fetchColumns("scheduled", { skipBoardLoading: true, skipDefaultMessage: true, rethrow: true, skipSync: true });
               this.message = "修改成功｜已排程已更新 " + new Date().toLocaleTimeString();
             } catch (e) {
               this._restoreRaw(snap);
@@ -1690,7 +1695,7 @@
               await this.callAction("/api/actions/delete", { post_id: postId, post_link_id: postLinkId }, { internal: true });
               const include = cat ? ("scheduled,pending:" + cat) : "scheduled,pending";
               this.message = cat ? ("正在同步已排程与「" + cat + "」已出未排…") : "正在同步已排程与全部已出未排…";
-              await this.fetchColumns(include, { skipBoardLoading: true, skipDefaultMessage: true, rethrow: true });
+              await this.fetchColumns(include, { skipBoardLoading: true, skipDefaultMessage: true, rethrow: true, skipSync: true });
               this.message = "取消排程成功｜已刷新 " + new Date().toLocaleTimeString();
             } catch (e) {
               this._restoreRaw(snap);
@@ -1727,7 +1732,7 @@
             }
             const key = "plink:" + String(item.post_link_id || "");
             await this.callAction("/api/actions/toggle-lock", { action_key: key });
-            await this.fetchColumns("scheduled");
+            await this.fetchColumns("scheduled", { skipSync: true });
           },
           async callAction(url, payload, opts) {
             const o = opts || {};

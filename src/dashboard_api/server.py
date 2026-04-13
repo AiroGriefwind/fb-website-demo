@@ -148,9 +148,13 @@ def get_board_columns(
         default=None,
         description="Comma-separated columns, e.g. scheduled,pending:娛樂 or published,scheduled,pending",
     ),
+    sync: bool = Query(
+        default=True,
+        description="Whether to sync live CMS data before reading board sample files.",
+    ),
 ) -> dict:
     includes = [x.strip() for x in (include or "").split(",") if x.strip()]
-    return load_board_columns(includes=includes or None)
+    return load_board_columns(includes=includes or None, sync_live=bool(sync))
 
 
 @app.post("/api/actions/publish")
@@ -159,6 +163,9 @@ def action_publish(payload: PublishRequest) -> dict:
         item_id=payload.item_id,
         schedule_time=payload.schedule_time,
         window_minutes=int(payload.window_minutes or DEFAULT_SCHEDULE_WINDOW_MINUTES),
+        post_message=str(payload.post_message or ""),
+        post_link_type=str(payload.post_link_type or "link"),
+        image_url=str(payload.image_url or ""),
     )
     if not bool(result.get("ok")):
         raise HTTPException(status_code=400, detail=str(result.get("message", "publish failed")))

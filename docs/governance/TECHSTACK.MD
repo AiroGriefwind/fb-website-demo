@@ -46,6 +46,20 @@
   - 分类浅色配色体系：`_category_style_tokens()` + `CATEGORY_INTENSITY_OVERRIDES`。
   - 大量定制 CSS（sticky 遮罩、横向滚动、响应式断点、卡片视觉反馈）。
 
+## FastAPI 看板 UI（当前主用）
+- 前端：
+  - 原生 `HTML + CSS + JavaScript` 单页界面，入口为 `frontend/board/index.html`。
+  - 交互状态管理使用 `Alpine.js`（CDN 引入，无 React/Vue 构建链）。
+  - 通过 `fetch("/api/...")` 调用 FastAPI 接口，局部刷新已发布 / 已排程 / 已出未排列。
+- 后端：
+  - `FastAPI` 提供 `/api/board/columns`、`/api/actions/publish|update|delete|toggle-lock`、侧栏设置与趋势接口。
+  - 使用 `StaticFiles` 挂载 `/board`（前端静态页面）与 `/assets`（样本图片/资源）。
+  - 运行入口为 `src/dashboard_api/run.py`，由 `uvicorn` 启动 `src.dashboard_api.server:app`。
+- 数据来源与刷新：
+  - 看板 UI 主要读取 `data/samples/*.json` 样本文件。
+  - Live 模式下由 `src/dashboard.live_api_sync` 拉取 CMS `fb_published` / `fb_scheduled` / `posts` 并重写样本文件。
+  - 手动「刷新全部」与部分动作后的 UI 回读都经由 FastAPI 完成；局部刷新应尽量复用已同步好的样本，避免重复全量拉取上游。
+
 ## 目录级约束
 - 所有可执行入口必须在 `src/` 或 `scripts/`。
 - 运行产物（截图、临时 JSON、HTML dump）必须落在 `artifacts/`。

@@ -201,14 +201,15 @@ def _sync_live() -> dict[str, Any]:
     return _refresh_live_sample_files(_read_default_session_settings())
 
 
-def load_board_columns(includes: list[str] | None = None) -> dict[str, Any]:
+def load_board_columns(includes: list[str] | None = None, *, sync_live: bool = True) -> dict[str, Any]:
     default_session = _read_default_session_settings()
-    sync_result = _refresh_live_sample_files(default_session)
     cms_upstream_calls: list[dict[str, Any]] = []
-    if isinstance(sync_result, dict):
-        raw_calls = sync_result.get("cms_upstream_calls")
-        if isinstance(raw_calls, list):
-            cms_upstream_calls = raw_calls
+    if sync_live:
+        sync_result = _refresh_live_sample_files(default_session)
+        if isinstance(sync_result, dict):
+            raw_calls = sync_result.get("cms_upstream_calls")
+            if isinstance(raw_calls, list):
+                cms_upstream_calls = raw_calls
 
     now_hkt = datetime.now(HKT_TZ)
     past_24h = now_hkt - timedelta(hours=24)

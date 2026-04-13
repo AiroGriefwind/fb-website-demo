@@ -1382,3 +1382,23 @@
 下一步:
 - 为 `/api/board/columns` 增加“跳过实时全量同步”或“按 include 仅刷新必要上游接口”的模式，缩短删除/修改后的局部刷新耗时。
 - 继续排查并修复 `api_smoke_test_app.py` 中已排程贴文类型修改能力，使 Smoke Test 与 FastAPI 看板行为一致。
+
+日期时间(HKT): 2026-04-13（续）
+负责人/LLM: wangz / GPT-5.4
+分支/worktree: feature/bot-ui-ops（本仓库）
+完成内容:
+- [本仓库] 更新 `docs/governance/TECHSTACK.MD`：补充当前主用 FastAPI 看板 UI 技术栈说明，明确区分前端 `HTML/CSS/JavaScript + Alpine.js`、后端 `FastAPI`，以及 `uvicorn` 仅作为 ASGI server / 启动方式；同步记录 `/board` 与 `/assets` 为 `StaticFiles` 挂载、Live 模式依赖 `src/dashboard.live_api_sync` 改写样本文件。
+- [本仓库] 优化 `GET /api/board/columns` 局部刷新链路：`src/dashboard_api/services.py` 的 `load_board_columns()` 新增 `sync_live` 开关，`src/dashboard_api/server.py` 暴露 `sync` 查询参数；动作成功后的前端二次回读（排程 / 修改 / 删除 / 锁定）统一通过 `frontend/board/index.html` 传 `sync=false`，改为直接读取刚同步好的样本文件，不再重复触发一整轮 `fb_published`、`fb_scheduled` 与全部分类 `posts`。
+- [本仓库] 更新看板前端 API 日志标识：`fetchColumns()` 在 `skipSync` 场景下将日志类型标为 `GET board/columns（局部，无同步）` / `GET board/columns（全量，无同步）`，便于肉眼区分“读取本地样本”和“实时拉取 CMS”的请求。
+
+验证结果:
+- 本地静态检查通过：`python -m py_compile src/dashboard_api/server.py src/dashboard_api/services.py` 无语法错误。
+- 代码层面确认：手动「刷新全部」仍走默认 `sync=true`；动作成功后的局部 UI 回读改走 `sync=false`，避免重复全量同步。
+
+风险/阻塞:
+- 当前动作接口 `publish_from_pending()` / `update_scheduled()` / `delete_scheduled()` 内部仍会在成功后调用 `_sync_live()`，因此虽然去掉了“动作后再读 columns 时重复同步”的第二轮开销，但动作本身仍是一次全量 CMS 刷新；若还需继续提速，需要进一步拆分动作后的最小必要同步。
+- `api_smoke_test_app.py` 中“修改已排程贴文类型”的问题仍未修复，需后续单独排查。
+
+下一步:
+- 继续拆解动作接口内部的 `_sync_live()`，评估按动作类型最小化刷新（例如仅重建 `scheduled` + 受影响分类 pending）的可行性。
+- 在线验证 API 日志是否已从“动作后两轮全量 CMS 请求”收敛为“动作内一轮同步 + 局部无同步回读”。
