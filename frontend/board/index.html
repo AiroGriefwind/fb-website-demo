@@ -446,6 +446,210 @@
         background: #f0f3fb;
         margin-top: 8px;
       }
+      .board-fab {
+        position: fixed;
+        right: 18px;
+        bottom: 22px;
+        z-index: 70;
+        width: 52px;
+        height: 52px;
+        border-radius: 999px;
+        border: 1px solid #8a9ef0;
+        background: linear-gradient(145deg, #4a6fff, #2e5bff);
+        color: #fff;
+        font-size: 22px;
+        line-height: 1;
+        cursor: pointer;
+        box-shadow: 0 10px 28px rgba(46, 91, 255, 0.35);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        font-family: system-ui, "Segoe UI", "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+      }
+      .board-fab:hover {
+        filter: brightness(1.06);
+        transform: translateY(-1px);
+      }
+      .board-fab:focus-visible {
+        outline: 2px solid #2e5bff;
+        outline-offset: 2px;
+      }
+      .modal-bulk-scheduler {
+        width: min(1120px, 98vw);
+        max-height: min(92vh, 900px);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .modal-bulk-scheduler h3 {
+        font-size: 16px;
+        line-height: 1.35;
+      }
+      .bulk-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 10px 0 12px;
+      }
+      .bulk-toolbar .btn {
+        flex: 0 1 auto;
+      }
+      .bulk-table-wrap {
+        overflow: auto;
+        flex: 1;
+        min-height: 200px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #fafbff;
+      }
+      .bulk-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      .bulk-table th,
+      .bulk-table td {
+        border-bottom: 1px solid #e8ecf8;
+        padding: 8px 6px;
+        vertical-align: middle;
+        text-align: left;
+      }
+      .bulk-table th {
+        background: #eef2fc;
+        font-weight: 700;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+      }
+      .bulk-table .cell-del { width: 44px; text-align: center; }
+      .bulk-table .cell-immediate { width: 52px; text-align: center; }
+      .bulk-table .cell-time { min-width: 168px; }
+      .bulk-table .cell-cat { min-width: 88px; }
+      .bulk-table .cell-title { min-width: 160px; }
+      .bulk-table .cell-type { min-width: 88px; }
+      .bulk-table input[type="text"],
+      .bulk-table input[type="datetime-local"],
+      .bulk-table select {
+        width: 100%;
+        max-width: 100%;
+        margin: 0;
+        font-size: 11px;
+        padding: 4px 6px;
+      }
+      .btn-bulk-remove {
+        border: 0;
+        background: rgba(191, 31, 61, 0.12);
+        color: #bf1f3d;
+        border-radius: 6px;
+        width: 32px;
+        height: 28px;
+        cursor: pointer;
+        font-size: 14px;
+        line-height: 1;
+      }
+      .btn-bulk-remove:hover {
+        background: rgba(191, 31, 61, 0.22);
+      }
+      .bulk-metrics-fold {
+        margin-top: 12px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #fff;
+        overflow: hidden;
+      }
+      .bulk-metrics-fold summary {
+        cursor: pointer;
+        padding: 10px 12px;
+        font-size: 12px;
+        font-weight: 700;
+        background: #f4f6fd;
+        list-style: none;
+      }
+      .bulk-metrics-fold summary::-webkit-details-marker {
+        display: none;
+      }
+      .bulk-metrics-body {
+        padding: 10px 12px 12px;
+        font-size: 11px;
+        color: #3d4456;
+        max-height: 220px;
+        overflow-y: auto;
+      }
+      .bulk-metrics-row {
+        border-top: 1px solid #eef1f8;
+        padding-top: 8px;
+        margin-top: 8px;
+      }
+      .bulk-metrics-row:first-child {
+        border-top: 0;
+        padding-top: 0;
+        margin-top: 0;
+      }
+      .modal-mask.modal-bulk-confirm {
+        z-index: 90;
+      }
+      .modal-bulk-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 2px;
+      }
+      .modal-bulk-head h3 {
+        margin: 0;
+        flex: 1;
+        min-width: 0;
+      }
+      .modal-bulk-close {
+        flex-shrink: 0;
+        width: 36px;
+        height: 36px;
+        border: 0;
+        border-radius: 8px;
+        background: rgba(191, 31, 61, 0.14);
+        color: #bf1f3d;
+        font-size: 24px;
+        line-height: 1;
+        cursor: pointer;
+        font-weight: 700;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+      }
+      .modal-bulk-close:hover {
+        background: rgba(191, 31, 61, 0.24);
+      }
+      .bulk-time-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 200px;
+      }
+      .bulk-time-grid.dimmed {
+        opacity: 0.45;
+        pointer-events: none;
+      }
+      .bulk-time-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        align-items: center;
+      }
+      .bulk-time-row select.field {
+        flex: 1;
+        min-width: 52px;
+        margin: 0;
+        font-size: 11px;
+        padding: 3px 4px;
+      }
+      .bulk-row-time-hint {
+        font-size: 10px;
+        color: #bf1f3d;
+        line-height: 1.35;
+        max-width: 220px;
+      }
       @media (max-width: 1024px) {
         .layout, .layout.sidebar-collapsed { grid-template-columns: 1fr; }
         .sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
@@ -649,6 +853,16 @@
               <label class="tiny" style="display:block; margin-top:8px;">测试 Fan Page ID</label>
               <input class="field" type="text" x-model="settings.target_fan_page_id" />
               <button class="btn primary" @click="saveSettings()" :disabled="loading || actionBusy">保存设置</button>
+              <button
+                type="button"
+                class="btn tiny"
+                style="margin-top: 8px; width: 100%;"
+                @click="randomizeMockArticleMetrics()"
+                :disabled="!raw || actionBusy"
+                title="仅在内存中随机 views/engagements/排名/social share（娛樂、心韓才有阅读量）；不写入 JSON"
+              >
+                随机排名数据
+              </button>
             </div>
           </div>
         </div>
@@ -1022,8 +1236,178 @@
             </div>
           </div>
         </div>
+
+        <div
+          class="modal-mask"
+          x-show="dialogs.bulkScheduler.open"
+          x-transition.opacity
+          x-cloak
+          @click.self="closeBulkScheduler()"
+        >
+          <div class="modal modal-bulk-scheduler" @click.stop>
+            <div class="modal-bulk-head">
+              <h3>Bastillepost Scheduler Editor（娛樂+社會事+Repost+Manual）</h3>
+              <button type="button" class="modal-bulk-close" title="關閉" @click="closeBulkScheduler()" aria-label="關閉">×</button>
+            </div>
+            <div class="bulk-toolbar">
+              <button type="button" class="btn tiny" @click="generateBulkEntertainment()">生成娛樂建議</button>
+              <button type="button" class="btn tiny" @click="generateBulkSociety()">生成社會事建議</button>
+              <button type="button" class="btn tiny" @click="generateBulkRepost()">生成Repost建議</button>
+              <button type="button" class="btn tiny" @click="addBulkRow()">新增排程</button>
+              <button type="button" class="btn tiny primary" @click="confirmBulkSend()">確認送出</button>
+              <button type="button" class="btn tiny" @click="copyBulkSchedule()">複製排程</button>
+            </div>
+            <div class="bulk-table-wrap">
+              <table class="bulk-table">
+                <thead>
+                  <tr>
+                    <th class="cell-del">刪除</th>
+                    <th class="cell-immediate">即推</th>
+                    <th class="cell-time">時間</th>
+                    <th class="cell-cat">欄目</th>
+                    <th class="cell-title">標題</th>
+                    <th class="cell-type">貼文類型</th>
+                  </tr>
+                </thead>
+                <template x-for="(row, idx) in bulkSchedulerRows" :key="row._id">
+                  <tr>
+                    <td class="cell-del">
+                      <button type="button" class="btn-bulk-remove" title="刪除此列" @click="requestRemoveBulkRow(idx)">✕</button>
+                    </td>
+                    <td class="cell-immediate">
+                      <input type="checkbox" x-model="row.immediate" title="即推（馬上發佈）" @change="bulkRowImmediateChanged(row)" />
+                    </td>
+                    <td class="cell-time">
+                      <div class="bulk-time-grid" :class="{ dimmed: row.immediate }">
+                        <div class="tiny" style="margin: 0;">香港時間（日 / 月 / 年）</div>
+                        <div class="bulk-time-row">
+                          <select
+                            class="field"
+                            x-model.number="row.day"
+                            @change="bulkRowDatePartChange(row)"
+                            :disabled="row.immediate"
+                          >
+                            <template x-for="d in bulkScheduleDayOptions(row)" :key="'bd_' + row._id + '_' + d">
+                              <option :value="d" x-text="String(d).padStart(2, '0')"></option>
+                            </template>
+                          </select>
+                          <select
+                            class="field"
+                            x-model.number="row.month"
+                            @change="bulkRowDatePartChange(row)"
+                            :disabled="row.immediate"
+                          >
+                            <template x-for="m in bulkScheduleMonthOptions(row)" :key="'bm_' + row._id + '_' + m">
+                              <option :value="m" x-text="String(m).padStart(2, '0')"></option>
+                            </template>
+                          </select>
+                          <select
+                            class="field"
+                            x-model.number="row.year"
+                            @change="bulkRowDatePartChange(row)"
+                            :disabled="row.immediate"
+                          >
+                            <template x-for="y in scheduleYearOptions()" :key="'by_' + row._id + '_' + y">
+                              <option :value="y" x-text="y"></option>
+                            </template>
+                          </select>
+                        </div>
+                        <div class="bulk-time-row">
+                          <select
+                            class="field"
+                            x-model.number="row.hour"
+                            @change="bulkRowDatePartChange(row)"
+                            :disabled="row.immediate"
+                          >
+                            <template x-for="h in (row._bulkHours && row._bulkHours.length ? row._bulkHours : [row.hour])" :key="'bh_' + row._id + '_' + h">
+                              <option :value="h" x-text="String(h).padStart(2, '0')"></option>
+                            </template>
+                          </select>
+                          <select
+                            class="field"
+                            x-model.number="row.minute"
+                            @change="bulkRowDatePartChange(row)"
+                            :disabled="row.immediate"
+                          >
+                            <template x-for="mm in (row._bulkMinutes && row._bulkMinutes.length ? row._bulkMinutes : [row.minute])" :key="'bmm_' + row._id + '_' + mm">
+                              <option :value="mm" x-text="String(mm).padStart(2, '0')"></option>
+                            </template>
+                          </select>
+                        </div>
+                        <div class="bulk-row-time-hint" x-show="row.timeHint && !row.immediate" x-text="row.timeHint"></div>
+                      </div>
+                    </td>
+                    <td class="cell-cat">
+                      <select class="field" x-model="row.category" style="margin: 0;">
+                        <option value="社會事">社會事</option>
+                        <option value="大視野">大視野</option>
+                        <option value="兩岸">兩岸</option>
+                        <option value="法庭事">法庭事</option>
+                        <option value="消費">消費</option>
+                        <option value="娛樂">娛樂</option>
+                        <option value="心韓">心韓</option>
+                        <option value="未分類">未分類</option>
+                      </select>
+                    </td>
+                    <td class="cell-title">
+                      <input type="text" x-model="row.title" placeholder="標題" />
+                    </td>
+                    <td class="cell-type">
+                      <select class="field" x-model="row.post_link_type" style="margin: 0;">
+                        <option value="link">link</option>
+                        <option value="text">text</option>
+                        <option value="photo">photo</option>
+                      </select>
+                    </td>
+                  </tr>
+                </template>
+              </table>
+              <div class="empty" x-show="bulkSchedulerRows.length === 0" style="padding: 24px;">暫無排程列，請使用上方按鈕生成或新增。</div>
+            </div>
+            <details class="bulk-metrics-fold">
+              <summary>推薦排名與指標（當前列表）</summary>
+              <div class="bulk-metrics-body">
+                <template x-for="(entry, mi) in bulkSchedulerMetricsEntries()" :key="'bm_' + mi + '_' + (entry.row._id || mi)">
+                  <div class="bulk-metrics-row">
+                    <div><strong x-text="entry.row.title || '(無標題)'"></strong></div>
+                    <div class="tiny" style="margin-top: 4px; line-height: 1.45; white-space: pre-line;" x-text="formatBulkMetricsLine(entry)"></div>
+                  </div>
+                </template>
+                <div class="tiny" x-show="bulkSchedulerRows.length === 0">無列可顯示。</div>
+              </div>
+            </details>
+          </div>
+        </div>
+
+        <div
+          class="modal-mask modal-bulk-confirm"
+          x-show="dialogs.bulkRowDelete.open"
+          x-transition.opacity
+          x-cloak
+          @click.self="closeBulkRowDelete()"
+        >
+          <div class="modal" @click.stop>
+            <h3>刪除此列？</h3>
+            <div class="tiny" style="margin: 10px 0 14px; line-height: 1.5;">確定要從排程編輯器中移除此列嗎？</div>
+            <div class="actions">
+              <button type="button" class="btn" @click="closeBulkRowDelete()">取消</button>
+              <button type="button" class="btn primary" @click="confirmBulkRowDelete()">刪除</button>
+            </div>
+          </div>
+        </div>
       </main>
     </div>
+
+    <button
+      type="button"
+      class="board-fab"
+      x-show="!dialogs.bulkScheduler.open"
+      x-cloak
+      title="Bastillepost Scheduler Editor"
+      @click="openBulkScheduler()"
+    >
+      📅
+    </button>
 
     <script>
       function boardApp() {
@@ -1056,8 +1440,11 @@
             schedule: { open: false, item: null, error: "", urlHint: "" },
             update: { open: false, item: null, error: "", urlHint: "" },
             delete: { open: false, item: null, error: "" },
-            nearImmediate: { open: false, scope: "" },
+            nearImmediate: { open: false, scope: "", bulkRowIndex: -1 },
+            bulkScheduler: { open: false },
+            bulkRowDelete: { open: false, index: -1 },
           },
+          bulkSchedulerRows: [],
           forms: {
             schedule: {
               year: 0,
@@ -1331,6 +1718,7 @@
             }
           },
           rebuildColumns() {
+            this._normalizeRawArticleMetrics();
             const published = this.raw?.published || [];
             const scheduled = this.raw?.scheduled || [];
             const pending = this.raw?.pending_by_category || {};
@@ -1522,7 +1910,7 @@
             } else {
               when = this.buildTimeString(this.forms.schedule);
               if (this._isFormPickedTooClose(this.forms.schedule)) {
-                this.dialogs.nearImmediate = { open: true, scope: "schedule" };
+                this.dialogs.nearImmediate = { open: true, scope: "schedule", bulkRowIndex: -1 };
                 return;
               }
             }
@@ -1655,7 +2043,7 @@
             } else {
               when = this.buildTimeString(this.forms.update);
               if (this._isFormPickedTooClose(this.forms.update)) {
-                this.dialogs.nearImmediate = { open: true, scope: "update" };
+                this.dialogs.nearImmediate = { open: true, scope: "update", bulkRowIndex: -1 };
                 return;
               }
             }
@@ -1822,15 +2210,19 @@
             this.dialogs[kind] = { open: false, item: null, error: "" };
           },
           closeNearImmediatePrompt() {
-            this.dialogs.nearImmediate = { open: false, scope: "" };
+            this.dialogs.nearImmediate = { open: false, scope: "", bulkRowIndex: -1 };
           },
           confirmNearImmediateChoice() {
             const scope = this.dialogs.nearImmediate.scope;
-            this.dialogs.nearImmediate = { open: false, scope: "" };
+            const bulkIdx = Number(this.dialogs.nearImmediate.bulkRowIndex);
+            this.dialogs.nearImmediate = { open: false, scope: "", bulkRowIndex: -1 };
             if (scope === "schedule") {
               this.forms.schedule.immediate_publish = true;
             } else if (scope === "update") {
               this.forms.update.immediate_publish = true;
+            } else if (scope === "bulk" && !Number.isNaN(bulkIdx) && bulkIdx >= 0 && this.bulkSchedulerRows[bulkIdx]) {
+              this.bulkSchedulerRows[bulkIdx].immediate = true;
+              this._bulkRowTimeChange(this.bulkSchedulerRows[bulkIdx]);
             }
           },
           toggleScheduleImmediate() {
@@ -2104,6 +2496,235 @@
             }
             return slots;
           },
+          _bulkLockedSlotKeys() {
+            const keys = new Set();
+            const scheduled = Array.isArray(this.raw?.scheduled) ? this.raw.scheduled : [];
+            for (const row of scheduled) {
+              if (!Boolean(row.is_locked)) continue;
+              const dt = this.parseToDate(row.publish_time) || this.parseLocalInputTime(String(row.publish_time || ""));
+              if (!dt) continue;
+              keys.add(this.slotKeyFromDate(dt));
+            }
+            return keys;
+          },
+          _bulkSlotKeyFromRowForm(form) {
+            const y = Number(form.year),
+              mo = Number(form.month),
+              d = Number(form.day),
+              h = Number(form.hour),
+              min = Number(form.minute);
+            if (!y || !mo || !d || Number.isNaN(h) || Number.isNaN(min)) return "";
+            return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")} ${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+          },
+          _bulkSlotIsLockedByKey(slotKey) {
+            if (!slotKey) return false;
+            return this._bulkLockedSlotKeys().has(slotKey);
+          },
+          _bulkSlotIsLockedFromForm(form) {
+            const when = this.buildTimeString(form);
+            const dt = this.parseHktWallTimeToDate(when);
+            if (!dt) return false;
+            return this._bulkSlotIsLockedByKey(this.slotKeyFromDate(dt));
+          },
+          calcSlotsByDateForBulk(form, enforceFuture) {
+            const step = Number(this.settings.schedule_window_minutes || 10);
+            const nowMs = Date.now();
+            const locked = this._bulkLockedSlotKeys();
+            const y = Number(form.year),
+              mo = Number(form.month),
+              d = Number(form.day);
+            const slots = [];
+            for (let h = 0; h < 24; h++) {
+              for (let m = 0; m < 60; m += step) {
+                const utcMs = Date.UTC(y, mo - 1, d, h - 8, m, 0, 0);
+                if (enforceFuture && utcMs <= nowMs) continue;
+                const key = `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")} ${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+                if (locked.has(key)) continue;
+                slots.push({ h, m });
+              }
+            }
+            if (!slots.length) {
+              for (let h = 0; h < 24; h++) {
+                for (let m = 0; m < 60; m += step) {
+                  const key = `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")} ${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+                  if (locked.has(key)) continue;
+                  slots.push({ h, m });
+                }
+              }
+            }
+            return slots;
+          },
+          bulkScheduleMonthOptions(row) {
+            const p = this._hktPartsFromInstant(Date.now());
+            const y = Number(row.year);
+            const start = y === p.year ? p.month : 1;
+            const arr = [];
+            for (let m = start; m <= 12; m++) arr.push(m);
+            return arr;
+          },
+          bulkScheduleDayOptions(row) {
+            const p = this._hktPartsFromInstant(Date.now());
+            const y = Number(row.year),
+              mo = Number(row.month);
+            const maxD = new Date(y, mo, 0).getDate();
+            const start = y === p.year && mo === p.month ? p.day : 1;
+            const arr = [];
+            for (let d = start; d <= maxD; d++) arr.push(d);
+            return arr;
+          },
+          bulkRefreshRowSlots(row) {
+            if (!row || row.immediate) return;
+            const slots = this.calcSlotsByDateForBulk(row, true);
+            const hours = [...new Set(slots.map((x) => x.h))];
+            if (!hours.length) {
+              row._bulkHours = [Number(row.hour) || 0];
+              row._bulkMinutes = [Number(row.minute) || 0];
+              return;
+            }
+            if (!hours.includes(Number(row.hour))) row.hour = hours[0];
+            const minutes = slots.filter((x) => x.h === Number(row.hour)).map((x) => x.m);
+            if (!minutes.length) {
+              row._bulkHours = hours;
+              row._bulkMinutes = [0];
+              return;
+            }
+            if (!minutes.includes(Number(row.minute))) row.minute = minutes[0];
+            row._bulkHours = hours;
+            row._bulkMinutes = minutes;
+          },
+          _clampBulkRowDate(row) {
+            if (!row || row.immediate) return;
+            const years = this.scheduleYearOptions();
+            if (!years.includes(Number(row.year))) row.year = years[0];
+            const months = this.bulkScheduleMonthOptions(row);
+            if (!months.includes(Number(row.month))) row.month = months[0];
+            const days = this.bulkScheduleDayOptions(row);
+            if (!days.includes(Number(row.day))) row.day = days[0];
+            this.bulkRefreshRowSlots(row);
+          },
+          bulkRowDatePartChange(row) {
+            if (!row || row.immediate) return;
+            this._clampBulkRowDate(row);
+            this._bulkRowTimeChange(row);
+          },
+          bulkRowImmediateChanged(row) {
+            if (!row) return;
+            if (!row.immediate) this._clampBulkRowDate(row);
+            this._bulkRowTimeChange(row);
+          },
+          _isBulkRowTooClose(row) {
+            if (!row || row.immediate) return false;
+            return this._isFormPickedTooClose({
+              year: row.year,
+              month: row.month,
+              day: row.day,
+              hour: row.hour,
+              minute: row.minute,
+              immediate_publish: false,
+            });
+          },
+          _bulkRowTimeChange(row) {
+            if (!row) return;
+            if (row.immediate) {
+              row.timeHint = "";
+              return;
+            }
+            const when = this.buildTimeString(row);
+            const dt = this.parseHktWallTimeToDate(when);
+            const step = Number(this.settings.schedule_window_minutes || 10);
+            if (!when || !dt) {
+              row.timeHint = "";
+              return;
+            }
+            if (dt.getTime() <= Date.now()) {
+              row.timeHint = "不能選擇過去的時間";
+              return;
+            }
+            if (Number(row.minute) % step !== 0) {
+              row.timeHint = `時間須符合 ${step} 分鐘窗口`;
+              return;
+            }
+            if (this._bulkSlotIsLockedFromForm(row)) {
+              row.timeHint = "該時間窗口已鎖定";
+              return;
+            }
+            if (this._isBulkRowTooClose(row)) {
+              row.timeHint = "發佈時間過近，請勾選即推或使用「確認送出」時選擇使用即推";
+              return;
+            }
+            row.timeHint = "";
+          },
+          _bulkNextSlotFromCursor(cursor) {
+            const step = Number(this.settings.schedule_window_minutes || 10);
+            const nowMs = Date.now();
+            const guardEnd = nowMs + this._earlyGuardMs();
+            let ms = Math.max(cursor.getTime(), nowMs);
+            for (let k = 0; k < 4000; k++) {
+              let p = this._hktPartsFromInstant(ms);
+              p = this._roundUpHktParts(p, step);
+              const cand = this.parseHktWallTimeToDate(this.buildTimeString(p));
+              if (!cand || Number.isNaN(cand.getTime())) {
+                ms += step * 60000;
+                continue;
+              }
+              const ct = cand.getTime();
+              if (ct <= nowMs) {
+                ms = ct + step * 60000;
+                continue;
+              }
+              if (ct <= guardEnd) {
+                ms = ct + step * 60000;
+                continue;
+              }
+              if (this._bulkSlotIsLockedByKey(this.slotKeyFromDate(cand))) {
+                ms = ct + step * 60000;
+                continue;
+              }
+              return { instant: cand, parts: { year: p.year, month: p.month, day: p.day, hour: p.hour, minute: p.minute } };
+            }
+            const fb = this._nextImmediateHktParts();
+            const when = this.buildTimeString(fb);
+            return { instant: this.parseHktWallTimeToDate(when), parts: fb };
+          },
+          _buildBulkRowsFromArticles(sorted, catFallback) {
+            const step = Number(this.settings.schedule_window_minutes || 10);
+            let cursor = new Date();
+            const rows = [];
+            for (let i = 0; i < sorted.length; i++) {
+              const art = sorted[i];
+              const slot = this._bulkNextSlotFromCursor(cursor);
+              const cat = String(art.category || catFallback || "未分類");
+              const r = {
+                _id: this._bulkNewRowId(),
+                item_id: String(art.item_id != null ? art.item_id : ""),
+                category: cat,
+                title: String(art.title || ""),
+                post_link_type: this._trimPostType(art.post_link_type),
+                year: slot.parts.year,
+                month: slot.parts.month,
+                day: slot.parts.day,
+                hour: slot.parts.hour,
+                minute: slot.parts.minute,
+                immediate: false,
+                timeHint: "",
+                _bulkHours: [],
+                _bulkMinutes: [],
+              };
+              this._clampBulkRowDate(r);
+              this._bulkRowTimeChange(r);
+              rows.push(r);
+              cursor = this.addMinutes(slot.instant, step);
+            }
+            return rows;
+          },
+          bulkRowScheduleTimeHkt(row) {
+            if (!row) return "";
+            if (row.immediate) {
+              const p = this._nextImmediateHktParts();
+              return this.buildTimeString(p);
+            }
+            return this.buildTimeString(row);
+          },
           refreshScheduleSlots() {
             const slots = this.calcSlotsByDate(this.forms.schedule, true);
             const hours = [...new Set(slots.map((x) => x.h))];
@@ -2335,6 +2956,341 @@
             };
             this.raw.pending_by_category[cat] = [row, ...this.raw.pending_by_category[cat]];
           },
+          ensureArticleMetrics(article) {
+            if (!article || typeof article !== "object") return article;
+            if (article.views == null || article.views === "") article.views = 0;
+            if (article.engagements == null || article.engagements === "") article.engagements = 0;
+            if (article.top_ranking == null || article.top_ranking === "") article.top_ranking = 0;
+            if (article.ai_ranking == null || article.ai_ranking === "") article.ai_ranking = 0;
+            article.views = Number(article.views) || 0;
+            article.engagements = Number(article.engagements) || 0;
+            article.top_ranking = Number(article.top_ranking) || 0;
+            article.ai_ranking = Number(article.ai_ranking) || 0;
+            if (typeof article.social_media_share !== "boolean") article.social_media_share = Boolean(article.social_media_share);
+            return article;
+          },
+          _normalizeRawArticleMetrics() {
+            if (!this.raw) return;
+            const walk = (arr) => {
+              if (!Array.isArray(arr)) return;
+              arr.forEach((a) => this.ensureArticleMetrics(a));
+            };
+            walk(this.raw.published);
+            walk(this.raw.scheduled);
+            const pbc = this.raw.pending_by_category || {};
+            Object.keys(pbc).forEach((k) => walk(pbc[k]));
+          },
+          randomizeMockArticleMetrics() {
+            if (!this.raw) {
+              this.message = "暂无数据，无法随机排名";
+              return;
+            }
+            const rndInt = (max) => Math.floor(Math.random() * (max + 1));
+            const walk = (arr) => {
+              if (!Array.isArray(arr)) return;
+              arr.forEach((row) => {
+                const cat = String(row.category || "");
+                const ent = cat === "娛樂" || cat === "心韓";
+                if (ent) {
+                  row.views = rndInt(50000);
+                  row.engagements = rndInt(12000);
+                } else {
+                  row.views = 0;
+                  row.engagements = 0;
+                }
+                row.top_ranking = rndInt(5);
+                row.ai_ranking = rndInt(5);
+                row.social_media_share = Math.random() < 0.35;
+                this.ensureArticleMetrics(row);
+              });
+            };
+            walk(this.raw.published);
+            walk(this.raw.scheduled);
+            const pbc = this.raw.pending_by_category || {};
+            Object.keys(pbc).forEach((k) => walk(pbc[k]));
+            this.rebuildColumns();
+            this.message = "已随机排名数据（仅内存，娛樂/心韓有阅读量）｜" + new Date().toLocaleTimeString();
+          },
+          openBulkScheduler() {
+            this.dialogs.bulkScheduler = { open: true };
+            (this.bulkSchedulerRows || []).forEach((r) => {
+              if (!r.immediate) {
+                this._clampBulkRowDate(r);
+                this._bulkRowTimeChange(r);
+              }
+            });
+          },
+          closeBulkScheduler() {
+            this.dialogs.bulkScheduler = { open: false };
+            this.dialogs.bulkRowDelete = { open: false, index: -1 };
+          },
+          _bulkNewRowId() {
+            return "b-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+          },
+          _bulkEmptyRow(partial) {
+            const slot = this._bulkNextSlotFromCursor(new Date());
+            const row = {
+              _id: this._bulkNewRowId(),
+              item_id: "",
+              category: "娛樂",
+              title: "",
+              post_link_type: "link",
+              year: slot.parts.year,
+              month: slot.parts.month,
+              day: slot.parts.day,
+              hour: slot.parts.hour,
+              minute: slot.parts.minute,
+              immediate: false,
+              timeHint: "",
+              _bulkHours: [],
+              _bulkMinutes: [],
+              ...(partial || {}),
+            };
+            if (!row.immediate) {
+              this._clampBulkRowDate(row);
+              this._bulkRowTimeChange(row);
+            }
+            return row;
+          },
+          _trimPostType(t) {
+            const s = String(t || "link").toLowerCase();
+            if (["link", "text", "photo"].includes(s)) return s;
+            return "link";
+          },
+          _sortSuggestionCandidates(list) {
+            const arr = (list || []).filter(Boolean);
+            arr.forEach((a) => this.ensureArticleMetrics(a));
+            const trSort = (v) => {
+              const n = Number(v) || 0;
+              return n === 0 ? 999 : n;
+            };
+            const arSort = (v) => {
+              const n = Number(v) || 0;
+              return n === 0 ? 999 : n;
+            };
+            arr.sort((a, b) => {
+              const sa = !!a.social_media_share;
+              const sb = !!b.social_media_share;
+              if (sa !== sb) return sa ? -1 : 1;
+              const tra = trSort(a.top_ranking);
+              const trb = trSort(b.top_ranking);
+              if (tra !== trb) return tra - trb;
+              const ara = arSort(a.ai_ranking);
+              const arb = arSort(b.ai_ranking);
+              if (ara !== arb) return ara - arb;
+              if ((b.views || 0) !== (a.views || 0)) return (b.views || 0) - (a.views || 0);
+              if ((b.engagements || 0) !== (a.engagements || 0)) return (b.engagements || 0) - (a.engagements || 0);
+              const pa = Number(a.popular_count || 0);
+              const pb = Number(b.popular_count || 0);
+              if (pb !== pa) return pb - pa;
+              const da = this.parseToDate(a.publish_time)?.getTime() || 0;
+              const db = this.parseToDate(b.publish_time)?.getTime() || 0;
+              return db - da;
+            });
+            return arr;
+          },
+          generateBulkEntertainment() {
+            if (!this.raw?.pending_by_category) {
+              this.message = "无 pending 数据";
+              return;
+            }
+            const cat = "娛樂";
+            const list = this.raw.pending_by_category[cat] || [];
+            const sorted = this._sortSuggestionCandidates(list);
+            this.bulkSchedulerRows = this._buildBulkRowsFromArticles(sorted, cat);
+            this.message = "已生成娛樂建議 " + sorted.length + " 條（Mock 排序，時間已避開鎖定格與過近區間）";
+          },
+          generateBulkSociety() {
+            if (!this.raw?.pending_by_category) {
+              this.message = "无 pending 数据";
+              return;
+            }
+            const cats = ["社會事", "大視野", "兩岸", "法庭事"];
+            const merged = [];
+            cats.forEach((c) => {
+              (this.raw.pending_by_category[c] || []).forEach((a) => merged.push(a));
+            });
+            const sorted = this._sortSuggestionCandidates(merged);
+            this.bulkSchedulerRows = this._buildBulkRowsFromArticles(sorted, "社會事");
+            this.message = "已生成社會事建議 " + sorted.length + " 條（Mock 排序，時間已避開鎖定格與過近區間）";
+          },
+          generateBulkRepost() {
+            const step = Number(this.settings.schedule_window_minutes || 10);
+            let cursor = new Date();
+            const specs = [
+              { category: "娛樂", title: "[Repost Mock] 示例文章 A", post_link_type: "link" },
+              { category: "心韓", title: "[Repost Mock] 示例文章 B", post_link_type: "photo" },
+              { category: "社會事", title: "[Repost Mock] 示例文章 C", post_link_type: "text" },
+            ];
+            const rows = [];
+            for (const s of specs) {
+              const slot = this._bulkNextSlotFromCursor(cursor);
+              cursor = this.addMinutes(slot.instant, step);
+              const r = {
+                _id: this._bulkNewRowId(),
+                item_id: "",
+                ...s,
+                year: slot.parts.year,
+                month: slot.parts.month,
+                day: slot.parts.day,
+                hour: slot.parts.hour,
+                minute: slot.parts.minute,
+                immediate: false,
+                timeHint: "",
+                _bulkHours: [],
+                _bulkMinutes: [],
+              };
+              this._clampBulkRowDate(r);
+              this._bulkRowTimeChange(r);
+              rows.push(r);
+            }
+            this.bulkSchedulerRows = rows;
+            this.message = "已載入 Repost 假資料 3 條（時間已避開鎖定格與過近區間）";
+          },
+          addBulkRow() {
+            if (!this.bulkSchedulerRows) this.bulkSchedulerRows = [];
+            this.bulkSchedulerRows.push(this._bulkEmptyRow());
+          },
+          _bulkRowHasContent(row) {
+            return Boolean(String(row?.title || "").trim() || String(row?.item_id || "").trim());
+          },
+          requestRemoveBulkRow(index) {
+            const row = this.bulkSchedulerRows[index];
+            if (!row) return;
+            if (!this._bulkRowHasContent(row)) {
+              this.bulkSchedulerRows.splice(index, 1);
+              return;
+            }
+            this.dialogs.bulkRowDelete = { open: true, index };
+          },
+          confirmBulkRowDelete() {
+            const i = Number(this.dialogs.bulkRowDelete.index);
+            this.dialogs.bulkRowDelete = { open: false, index: -1 };
+            if (!Number.isNaN(i) && i >= 0) this.bulkSchedulerRows.splice(i, 1);
+          },
+          closeBulkRowDelete() {
+            this.dialogs.bulkRowDelete = { open: false, index: -1 };
+          },
+          findArticleByItemIdInRaw(itemId) {
+            if (!itemId || !this.raw) return null;
+            const id = String(itemId).trim();
+            const match = (row) => String(row?.item_id ?? "").trim() === id;
+            for (const row of this.raw.published || []) if (match(row)) return row;
+            for (const row of this.raw.scheduled || []) if (match(row)) return row;
+            const pbc = this.raw.pending_by_category || {};
+            for (const k of Object.keys(pbc)) {
+              for (const row of pbc[k] || []) if (match(row)) return row;
+            }
+            return null;
+          },
+          bulkSchedulerMetricsEntries() {
+            return (this.bulkSchedulerRows || []).map((row) => ({
+              row,
+              art: row.item_id ? this.findArticleByItemIdInRaw(row.item_id) : null,
+            }));
+          },
+          formatBulkMetricsLine(entry) {
+            const art = entry.art;
+            if (!art) return "未綁定看板文章或無法依 item_id 找到來源。";
+            this.ensureArticleMetrics(art);
+            const pc = art.popular_count != null ? String(art.popular_count) : "—";
+            return (
+              "Views: " +
+              art.views +
+              "\nEngagements: " +
+              art.engagements +
+              "\nTop ranking: " +
+              art.top_ranking +
+              "\nAI ranking: " +
+              art.ai_ranking +
+              "\nSocial media share: " +
+              (art.social_media_share ? "是" : "否") +
+              "\npopular_count: " +
+              pc
+            );
+          },
+          confirmBulkSend() {
+            const rows = this.bulkSchedulerRows || [];
+            const step = Number(this.settings.schedule_window_minutes || 10);
+            for (let i = 0; i < rows.length; i++) {
+              const r = rows[i];
+              if (r.immediate) continue;
+              const when = this.buildTimeString(r);
+              const dt = this.parseHktWallTimeToDate(when);
+              if (!when || !dt) {
+                this.message = "第 " + (i + 1) + " 行：時間不完整";
+                return;
+              }
+              if (dt.getTime() <= Date.now()) {
+                this.message = "第 " + (i + 1) + " 行：不能排到過去時間";
+                return;
+              }
+              if (Number(r.minute) % step !== 0) {
+                this.message = "第 " + (i + 1) + " 行：時間須符合 " + step + " 分鐘窗口";
+                return;
+              }
+              if (this._bulkSlotIsLockedFromForm(r)) {
+                this.message = "第 " + (i + 1) + " 行：該時間窗口已鎖定";
+                return;
+              }
+              if (this._isBulkRowTooClose(r)) {
+                this.dialogs.nearImmediate = { open: true, scope: "bulk", bulkRowIndex: i };
+                this.message = "第 " + (i + 1) + " 行：發佈時間過近，是否使用即推？";
+                return;
+              }
+            }
+            const snapshot = rows.map((r) => ({
+              item_id: r.item_id,
+              immediate: r.immediate,
+              schedule_time_hkt: this.bulkRowScheduleTimeHkt(r),
+              category: r.category,
+              title: r.title,
+              post_link_type: r.post_link_type,
+            }));
+            console.table(snapshot);
+            this.message =
+              "Scheduler（Mock）：已輸出 " + rows.length + " 條至控制台（未呼叫 API）｜" + new Date().toLocaleTimeString();
+          },
+          async copyBulkSchedule() {
+            const rows = this.bulkSchedulerRows || [];
+            const lines = [
+              ["immediate", "schedule_time_hkt", "category", "title", "post_link_type", "item_id"].join("\t"),
+            ];
+            rows.forEach((r) => {
+              lines.push(
+                [
+                  r.immediate ? "1" : "0",
+                  this.bulkRowScheduleTimeHkt(r) || "",
+                  r.category || "",
+                  (r.title || "").replace(/\t/g, " "),
+                  r.post_link_type || "",
+                  r.item_id || "",
+                ].join("\t")
+              );
+            });
+            const text = lines.join("\n");
+            try {
+              if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(text);
+                this.message = "排程表已複製為 TSV（" + rows.length + " 列）";
+              } else {
+                throw new Error("no clipboard");
+              }
+            } catch {
+              this.message = "複製失敗：瀏覽器不支援或需 HTTPS";
+            }
+          },
+          _mockArticleMetrics(cat, seed) {
+            const ent = cat === "娛樂" || cat === "心韓";
+            const h = Math.abs(seed) % 997;
+            return {
+              views: ent ? 800 + (h * 83) % 42000 : 0,
+              engagements: ent ? 50 + (h * 41) % 9000 : 0,
+              top_ranking: h % 6,
+              ai_ranking: (h * 2) % 6,
+              social_media_share: h % 4 === 0,
+            };
+          },
           buildMockPayload() {
             const now = new Date();
             const toIso = (minutes) => new Date(now.getTime() + minutes * 60000).toISOString();
@@ -2342,6 +3298,7 @@
             this.categoryOrder.forEach((cat, cidx) => {
               pendingByCategory[cat] = Array.from({ length: 3 }).map((_, i) => {
                 const id = String(10000 + cidx * 100 + i);
+                const seed = Number(id) + cidx * 17;
                 return {
                   item_id: id,
                   post_id: Number(id),
@@ -2353,17 +3310,33 @@
                   post_message: cat + " Mock 文章 " + (i + 1),
                   post_link_type: "link",
                   "Post URL": "https://mock.example/article/" + id,
+                  ...this._mockArticleMetrics(cat, seed + i),
                 };
               });
             });
             return {
               published: [
-                { title: "已发布 Mock 1", publish_time: toIso(-120), thumbnail: "" },
-                { title: "已发布 Mock 2", publish_time: toIso(-240), thumbnail: this.dummyThumb },
+                {
+                  title: "已发布 Mock 1",
+                  item_id: "pub-m-1",
+                  publish_time: toIso(-120),
+                  thumbnail: "",
+                  category: "心韓",
+                  ...this._mockArticleMetrics("心韓", 501),
+                },
+                {
+                  title: "已发布 Mock 2",
+                  item_id: "pub-m-2",
+                  publish_time: toIso(-240),
+                  thumbnail: this.dummyThumb,
+                  category: "消費",
+                  ...this._mockArticleMetrics("消費", 502),
+                },
               ],
               scheduled: [
                 {
                   title: "已排程 Mock 1",
+                  item_id: "sch-m-1",
                   category: "娛樂",
                   publish_time: toIso(40),
                   thumbnail: this.dummyThumb,
@@ -2372,6 +3345,7 @@
                   post_message: "已排程 Mock 1",
                   post_link_type: "link",
                   is_locked: false,
+                  ...this._mockArticleMetrics("娛樂", 601),
                 },
               ],
               pending_by_category: pendingByCategory,

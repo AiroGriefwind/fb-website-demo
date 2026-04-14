@@ -1438,3 +1438,25 @@
 
 下一步:
 - 按需将 demo 部署环境与 `dashboard_settings_state.json` 的备份/迁移纳入运维说明。
+
+日期时间(HKT): 2026-04-14
+负责人/LLM: wangz / GPT-5.4
+分支/worktree: feature/bot-ui-ops（本仓库）
+完成内容:
+- [本仓库] 新增右下角悬浮入口与批量排程弹窗框架：`frontend/board/index.html` 增加固定 FAB（滚动时保持右下角）、`Bastillepost Scheduler Editor（娛樂+社會事+Repost+Manual）` 弹窗、六个工具按钮（生成娛樂建議 / 生成社會事建議 / 生成Repost建議 / 新增排程 / 確認送出 / 複製排程）、可编辑表格（刪除 / 即推 / 時間 / 欄目 / 標題 / 貼文類型）与底部折叠指标区；删除行支持二次确认。
+- [本仓库] 批量排程时间逻辑对齐现有单篇排程约束：批量表格时间改为 HKT 的日/月/年 + 时/分下拉，按 `schedule_window_minutes` 生成合法时间窗；禁止过去时间；感知已排程锁定格（`is_locked`）并避开；若时间落入「最近 N 个时间窗口」则触发与现有弹窗一致的过近提示并支持将该行切换为即推；即推开启时灰掉时间下拉。
+- [本仓库] 批量弹窗交互优化：移除工具栏中的「關閉」文字按钮，改为标题右上角红色 `×` 关闭按钮，提高可见性；保留遮罩点按关闭。
+- [本仓库] 增加 Mock 排名测试能力：侧栏设置新增「随机排名数据」按钮，随机刷新当前内存中所有文章的 `top_ranking` / `ai_ranking` / `social_media_share`，并仅对「娛樂、心韓」生成非零 `views` 与 `engagements`；用于快速验证建议排序输出是否随数据变化。
+- [本仓库] 样本数据与脚本补齐：新增 `scripts/annotate_board_metrics.py` 并执行，统一为 `data/samples/dashboard_pending.json`、`data/samples/dashboard_published.json`、`data/samples/dashboard_scheduled.json` 的每条文章补齐 `views`、`engagements`、`top_ranking`、`ai_ranking`、`social_media_share` 五个字段；`buildMockPayload()` 也同步补齐上述字段，确保纯 Mock 模式可测试。
+
+验证结果:
+- 手测（Mock）：右下角 FAB 可打开弹窗；生成娛樂/社會事建议可回填表格；折叠区可查看行对应指标；删除二次确认正常；复制输出 TSV 正常。
+- 手测（时间约束）：批量行时间不可选过去；锁定窗口不可选；过近时间在确认送出时弹出提示并可切换即推。
+- 数据校验：`python scripts/annotate_board_metrics.py` 成功更新三份样本；`python -c "import json; ..."` 校验三份 JSON 可解析。
+
+风险/阻塞:
+- 当前「確認送出」仍为 UI 占位（`console.table` + 提示），未串接批量 API；真实批量执行策略（失败重试、并发、回滚）待后续设计。
+- 现阶段锁定校验来源于前端当前 `raw.scheduled` 数据快照；若真实后端状态变化而前端未刷新，可能出现短时不一致。
+
+下一步:
+- 设计并落地批量送出 API（含逐条结果回显与失败处理），并将当前批量弹窗的即推/时间规则完整复用到后端校验链路。
