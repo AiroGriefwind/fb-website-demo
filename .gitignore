@@ -12,8 +12,21 @@ configs/secrets/serviceAccountKey.json
 client_secret.json
 token.json
 
-# Keep sample and template JSON under version control
-!data/samples/*.json
+# Demo board data snapshots (local/CMS-derived; not for public repo)
+data/samples/dashboard_pending.json
+data/samples/dashboard_published.json
+data/samples/dashboard_scheduled.json
+data/samples/google_trends_hk_mock.json
+
+# Local API / colleague experiments (drop before delivery)
+scripts/curlTest.py
+scripts/login_httpclient_test.py
+scripts/login_token_console.py
+scripts/posts_colleague_exact.py
+scripts/posts_colleague_exact.runtime.py
+scripts/posts_colleague_no_cookie.py
+scripts/posts_colleague_no_cookie.runtime.py
+
 !configs/**/*.example.json
 data/runtime/review_events.jsonl
 logs/
