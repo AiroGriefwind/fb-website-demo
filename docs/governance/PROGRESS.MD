@@ -1460,3 +1460,22 @@
 
 下一步:
 - 设计并落地批量送出 API（含逐条结果回显与失败处理），并将当前批量弹窗的即推/时间规则完整复用到后端校验链路。
+
+日期时间(HKT): 2026-04-21
+负责人/LLM: wangz / GPT-5.4
+分支/worktree: feature/bot-ui-ops（本仓库）
+完成内容:
+- [本仓库] 交付前卫生与隐私：从 Git 停止跟踪并自远端移除四类「看板样本/趋势」JSON（`dashboard_pending.json`、`dashboard_published.json`、`dashboard_scheduled.json`、`google_trends_hk_mock.json`），写入 `.gitignore`；本地文件保留供 Mock/Live 写回。同步将同事联调与本地 API 试验脚本列入忽略（`curlTest.py`、`login_token_console.py`、`posts_colleague_*.py`、`login_httpclient_test.py`），文件暂留工作区、不进入版本库，便于后续迁入同事插件前减少误提交与远端暴露。
+- [本仓库] `frontend/board/index.html`：侧栏容器 `z-index` 自 95 调整为 4，避免与批量排程 FAB/弹窗叠层冲突；`buildMockPayload()` 将「娛樂」「心韓」待排程 Mock 行数增至 200、其余分类为 0，便于压力验证建议排序与表格性能（纯前端 Mock，无真实 CMS 数据）。
+- [本仓库] `src/dashboard/fb_action_client.py`：`fb_publish` 默认 `post_timezone` 与后端一致改为 `UTC`；`fb_update` 请求体补充 `post_timezone` 参数（默认 `UTC`），避免更新动作与发布动作时区字段不一致。
+
+验证结果:
+- `git rm --cached` 后本地 `data/samples/*.json` 仍存在；`git push origin feature/bot-ui-ops` 与 `git push public feature/bot-ui-ops:main` 成功，远端树已不再包含上述四类 JSON 与 `login_httpclient_test.py`。
+- 对上述两源文件 diff 自检：无硬编码密钥、Cookie 或账号。
+
+风险/阻塞:
+- 历史提交中仍可能保留已推送样本 JSON 的 blob；若需从 GitHub 历史彻底抹除需另行 filter-repo/BFG，与本次「当前树不再跟踪」不同。
+- 全新 clone 若无本地四类 JSON，Mock 看板初始为空列表直至本地生成或由 Live 同步写回；属与「样本不上库」的权衡。
+
+下一步:
+- 迁入同事插件后在本仓库站点做对接测试；按需补充 `data/samples` 的生成说明或极小脱敏示例（若 CI/新成员需要空仓库可跑）。

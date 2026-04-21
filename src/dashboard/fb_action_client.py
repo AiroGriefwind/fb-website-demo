@@ -261,7 +261,7 @@ class FBActionClient:
         post_link_type: str,
         image_url: str = "",
         post_mp4_url: str = "",
-        post_timezone: str = "Asia/Hong_Kong",
+        post_timezone: str = "UTC",
     ) -> dict[str, Any]:
         return self.run_action(
             "fb_publish",
@@ -286,6 +286,7 @@ class FBActionClient:
         post_link_type: str,
         image_url: str = "",
         post_mp4_url: str = "",
+        post_timezone: str = "UTC",
     ) -> dict[str, Any]:
         return self.run_action(
             "fb_update",
@@ -297,6 +298,7 @@ class FBActionClient:
                 "post_link_type": post_link_type,
                 "image_url": image_url.strip() or None,
                 "post_mp4_url": post_mp4_url.strip() or None,
+                "post_timezone": post_timezone,
             },
         )
 
