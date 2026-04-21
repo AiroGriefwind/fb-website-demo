@@ -1479,3 +1479,24 @@
 
 下一步:
 - 迁入同事插件后在本仓库站点做对接测试；按需补充 `data/samples` 的生成说明或极小脱敏示例（若 CI/新成员需要空仓库可跑）。
+
+日期时间(HKT): 2026-04-21（迁移整合验收）
+负责人/LLM: wangz / GPT-5.4
+分支/worktree: feature/bot-ui-ops（本仓库）
+完成内容:
+- [本仓库] 与同事插件迁移说明逐项对齐核验：工作区变更与总结一致，包含 `frontend/board/index.html`、`src/dashboard_api/{server.py,services.py,schemas.py}`、`src/scheduler_plugin/`（13 个 Python 文件）、`SCHEDULER_PLUGIN.md`、`tests/test_scheduler_plugin.py`、`data/samples/dashboard_schedule_method_state.json` 与 `requirements.txt` 的依赖补充。
+- [本仓库] 旧接口兼容层已落地并可被同事 UI 调用：`/console`、`/scheduler-widget.js`、`/schedule/generate`、`/schedule/confirm`、`/repost/generate`、`/articles/latest`、`/articles/search`、`/alerts/pending`；同时保留 `POST /api/scheduler/generate` 与 `POST /api/scheduler/apply` 供看板本身调用。
+- [本仓库] 自动排程与冲突确认机制已接入：`services.py` 使用 `dashboard_schedule_method_state.json` 记录 `manual_user/auto_plugin`，并在时段冲突时返回 `requires_confirmation`，支持前端确认后顺延。
+- [本仓库] 修复「引擎全自動建議」前端自锁：`generateBulkFromEngine()` 在 `actionBusy=true` 场景下调用 `apiFetch()` 前新增 `_apiBypassBusy=true`，`finally` 恢复为 `false`，避免误报「当前有贴文操作进行中」导致 mock/live 都无法生成建议。
+
+验证结果:
+- 代码核对：上述路由、状态字段与文件均可在当前工作区检索到，和迁移说明对应。
+- 自动化测试：`python -m pytest tests/test_scheduler_plugin.py -q --tb=short` 结果 `6 passed`。
+- 本地手动验证（代码层）：引擎建议按钮调用链已从原先自锁路径解除，错误文案来源点与修复点一致。
+
+风险/阻塞:
+- `data/samples/dashboard_schedule_method_state.json` 当前含运行态 `pid:*` 映射，属于状态数据；如后续希望仓库更干净，可改为默认空对象模板并在运行时填充。
+- 仍需在真实 CMS 凭证与并发操作下做一次端到端回归（生成建议 -> 批量确认 -> 看板刷新）以覆盖线上接口抖动场景。
+
+下一步:
+- 已进入可 push 状态；本次记录与迁移代码一起提交并推送到 `public`（fb demo website）仓库 `main`。

@@ -11,6 +11,8 @@ class PublishRequest(BaseModel):
     post_link_type: str = "link"
     image_url: str = ""
     immediate_publish: bool = False
+    allow_shift: bool = False
+    schedule_method: str = "manual_user"
 
 
 class UpdateRequest(BaseModel):
@@ -25,6 +27,8 @@ class UpdateRequest(BaseModel):
     target_action_key: str = ""
     window_minutes: int = 10
     immediate_publish: bool = False
+    allow_shift: bool = False
+    schedule_method: str = "manual_user"
 
 
 class DeleteRequest(BaseModel):
@@ -43,4 +47,28 @@ class BoardColumnsResponse(BaseModel):
     generated_at: str
     # Populated when board load triggers live sync (browser → FastAPI → CMS).
     cms_upstream_calls: list[dict] = Field(default_factory=list)
+
+
+class SchedulerGenerateRequest(BaseModel):
+    schedule_date: str = Field(..., description="Anchor date YYYY-MM-DD (HKT calendar day)")
+    sync: bool = Field(default=True, description="Run live CMS sync before reading sample pending/published")
+    include_published_for_repost: bool = Field(default=True)
+    repost_engagement_threshold: float = Field(default=50.0)
+
+
+class SchedulerApplyItem(BaseModel):
+    item_id: str = Field(..., min_length=1)
+    schedule_time: str = Field(default="", description="YYYY-MM-DDTHH:mm HKT; ignored when immediate_publish")
+    immediate_publish: bool = False
+    window_minutes: int = Field(default=10, ge=1, le=60)
+    post_message: str = ""
+    post_link_type: str = "link"
+    image_url: str = ""
+    allow_shift: bool = True
+    schedule_method: str = "auto_plugin"
+
+
+class SchedulerApplyRequest(BaseModel):
+    items: list[SchedulerApplyItem] = Field(default_factory=list)
+    stop_on_error: bool = True
 

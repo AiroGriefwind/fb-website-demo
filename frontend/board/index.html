@@ -1253,6 +1253,7 @@
               <button type="button" class="btn tiny" @click="generateBulkEntertainment()">生成娛樂建議</button>
               <button type="button" class="btn tiny" @click="generateBulkSociety()">生成社會事建議</button>
               <button type="button" class="btn tiny" @click="generateBulkRepost()">生成Repost建議</button>
+              <button type="button" class="btn tiny primary" title="同步 CMS 后跑引擎，填入下方表格" @click="generateBulkFromEngine()">引擎全自動建議</button>
               <button type="button" class="btn tiny" @click="addBulkRow()">新增排程</button>
               <button type="button" class="btn tiny primary" @click="confirmBulkSend()">確認送出</button>
               <button type="button" class="btn tiny" @click="copyBulkSchedule()">複製排程</button>
@@ -1398,16 +1399,7 @@
       </main>
     </div>
 
-    <button
-      type="button"
-      class="board-fab"
-      x-show="!dialogs.bulkScheduler.open"
-      x-cloak
-      title="Bastillepost Scheduler Editor"
-      @click="openBulkScheduler()"
-    >
-      📅
-    </button>
+    <!-- 旧占位 FAB 已替换：直接加载同事完整插件（/scheduler-widget.js） -->
 
     <script>
       function boardApp() {
@@ -1868,19 +1860,17 @@
               this.message = "当前有贴文操作进行中，请稍候";
               return;
             }
-            const step0 = Number(this.settings.schedule_window_minutes || 10);
             const p0 = this._hktPartsFromInstant(Date.now());
-            const rounded = this._roundUpHktParts(p0, step0);
             const defaultMsg = String(item.post_message || item.title || "").trim();
             const defImg = this.pendingFeatureImageUrl(item);
             let ptype = String(item.post_link_type || "link").toLowerCase();
             if (!["link", "text", "photo"].includes(ptype)) ptype = "link";
             this.forms.schedule = {
-              year: rounded.year,
-              month: rounded.month,
-              day: rounded.day,
-              hour: rounded.hour,
-              minute: rounded.minute,
+              year: p0.year,
+              month: p0.month,
+              day: p0.day,
+              hour: p0.hour,
+              minute: p0.minute,
               post_message: defaultMsg,
               post_link_type: ptype,
               image_url: defImg,
@@ -1909,10 +1899,6 @@
               });
             } else {
               when = this.buildTimeString(this.forms.schedule);
-              if (this._isFormPickedTooClose(this.forms.schedule)) {
-                this.dialogs.nearImmediate = { open: true, scope: "schedule", bulkRowIndex: -1 };
-                return;
-              }
             }
             const cat = String(item.category || "");
             if (!when) {
@@ -1976,8 +1962,33 @@
                 post_link_type: pickedType,
                 image_url: pickedType === "photo" ? pickedImage : "",
                 immediate_publish: immediate,
+                allow_shift: false,
+                schedule_method: "manual_user",
               };
-              const data = await this.callAction("/api/actions/publish", payload, { internal: true });
+              let data;
+              try {
+                data = await this.callAction("/api/actions/publish", payload, { internal: true });
+              } catch (e) {
+                const detail = e && e.detail ? e.detail : null;
+                if (detail && detail.requires_confirmation) {
+                  const existedTitle = String(detail.existing_title || "N/A");
+                  const existedMethod = String(detail.existing_method || "auto");
+                  const confirmed = window.confirm(
+                    `該時間窗口已有文章：${existedTitle}\n排程方式：${existedMethod}\n是否順延並以本次手動排程覆蓋該窗口？`
+                  );
+                  if (confirmed) {
+                    data = await this.callAction(
+                      "/api/actions/publish",
+                      { ...payload, allow_shift: true },
+                      { internal: true }
+                    );
+                  } else {
+                    throw new Error("使用者取消順延");
+                  }
+                } else {
+                  throw e;
+                }
+              }
               const include = "scheduled" + (cat ? (",pending:" + cat) : ",pending");
               this.message = "正在同步已排程与「" + (cat || "全部") + "」已出未排…";
               await this.fetchColumns(include, { skipBoardLoading: true, skipDefaultMessage: true, rethrow: true, skipSync: true });
@@ -2004,7 +2015,6 @@
             }
             const baseMs = (this.parseToDate(item.publish_time) || new Date()).getTime();
             const p0 = this._hktPartsFromInstant(baseMs);
-            const step0 = Number(this.settings.schedule_window_minutes || 10);
             let ptype = String(item.post_link_type || "link").toLowerCase();
             if (!["link", "text", "photo"].includes(ptype)) ptype = "link";
             const defImg = String(item.image_url || item.thumbnail || "").trim();
@@ -2013,7 +2023,7 @@
               month: p0.month,
               day: p0.day,
               hour: p0.hour,
-              minute: this.alignMinute(p0.minute, step0),
+              minute: p0.minute,
               post_link_type: ptype,
               post_message: String(item.post_message || item.title || "").trim(),
               image_url: defImg,
@@ -2042,10 +2052,6 @@
               });
             } else {
               when = this.buildTimeString(this.forms.update);
-              if (this._isFormPickedTooClose(this.forms.update)) {
-                this.dialogs.nearImmediate = { open: true, scope: "update", bulkRowIndex: -1 };
-                return;
-              }
             }
             if (!when) {
               this.dialogs.update.error = "时间格式错误";
@@ -2103,23 +2109,40 @@
             this.message = "正在呼叫 FB 更新排程 API（update）…";
             this._apiBypassBusy = true;
             try {
-              await this.callAction(
-                "/api/actions/update",
-                {
-                  post_id: Number(item.post_id || 0),
-                  post_link_id: String(item.post_link_id || ""),
-                  post_message: pickedMsg,
-                  post_link_time: when,
-                  post_link_type: pickedType,
-                  image_url: pickedImage,
-                  post_mp4_url: "",
-                  enforce_time_validation: true,
-                  target_action_key: "plink:" + String(item.post_link_id || ""),
-                  window_minutes: Number(this.settings.schedule_window_minutes || 10),
-                  immediate_publish: immediate,
-                },
-                { internal: true }
-              );
+              const payload = {
+                post_id: Number(item.post_id || 0),
+                post_link_id: String(item.post_link_id || ""),
+                post_message: pickedMsg,
+                post_link_time: when,
+                post_link_type: pickedType,
+                image_url: pickedImage,
+                post_mp4_url: "",
+                enforce_time_validation: true,
+                target_action_key: "plink:" + String(item.post_link_id || ""),
+                window_minutes: Number(this.settings.schedule_window_minutes || 10),
+                immediate_publish: immediate,
+                allow_shift: false,
+                schedule_method: "manual_user",
+              };
+              try {
+                await this.callAction("/api/actions/update", payload, { internal: true });
+              } catch (e) {
+                const detail = e && e.detail ? e.detail : null;
+                if (detail && detail.requires_confirmation) {
+                  const existedTitle = String(detail.existing_title || "N/A");
+                  const existedMethod = String(detail.existing_method || "auto");
+                  const confirmed = window.confirm(
+                    `該時間窗口已有文章：${existedTitle}\n排程方式：${existedMethod}\n是否順延並覆蓋該窗口？`
+                  );
+                  if (confirmed) {
+                    await this.callAction("/api/actions/update", { ...payload, allow_shift: true }, { internal: true });
+                  } else {
+                    throw new Error("使用者取消順延");
+                  }
+                } else {
+                  throw e;
+                }
+              }
               this.message = "正在刷新已排程列…";
               await this.fetchColumns("scheduled", { skipBoardLoading: true, skipDefaultMessage: true, rethrow: true, skipSync: true });
               this.message = "修改成功｜已排程已更新 " + new Date().toLocaleTimeString();
@@ -2239,11 +2262,7 @@
             return n * step * 60000;
           },
           _isFormPickedTooClose(form) {
-            if (!form || form.immediate_publish) return false;
-            const when = this.buildTimeString(form);
-            const picked = this.parseHktWallTimeToDate(when);
-            if (!picked) return false;
-            return picked.getTime() <= Date.now() + this._earlyGuardMs();
+            return false;
           },
           _nextImmediateHktParts() {
             const step = Number(this.settings.schedule_window_minutes || 10);
@@ -2290,13 +2309,21 @@
               else if (url.includes("/update")) kind = "POST actions/update";
               else if (url.includes("/delete")) kind = "POST actions/delete";
               else if (url.includes("/toggle-lock")) kind = "POST actions/toggle-lock";
+              else if (url.includes("/scheduler/apply")) kind = "POST scheduler/apply";
               const res = await this.apiFetch(kind, url, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload),
               });
               const data = await res.json().catch(() => ({}));
-              if (!res.ok) throw new Error(data.detail || data.message || "action failed");
+              if (!res.ok) {
+                const detail = data.detail ?? data;
+                let msg = data.detail ?? data.message ?? "action failed";
+                if (typeof msg === "object") msg = msg.message || JSON.stringify(msg);
+                const err = new Error(String(msg));
+                err.detail = detail;
+                throw err;
+              }
               if (!internal) this.message = "操作成功：" + (data.message || "ok");
               return data;
             } catch (e) {
@@ -2448,8 +2475,9 @@
             return new Date(utcMs);
           },
           alignMinute(minute, step) {
-            const s = Number(step || 10);
-            return Math.floor(Number(minute || 0) / s) * s;
+            const m = Number(minute || 0);
+            if (Number.isNaN(m)) return 0;
+            return Math.max(0, Math.min(59, Math.floor(m)));
           },
           parseToDate(raw) {
             if (!raw) return null;
@@ -2479,7 +2507,7 @@
             return `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
           },
           calcSlotsByDate(form, enforceFuture) {
-            const step = Number(this.settings.schedule_window_minutes || 10);
+            const step = 1;
             const nowMs = Date.now();
             const y = Number(form.year),
               mo = Number(form.month),
@@ -3114,6 +3142,72 @@
             this.bulkSchedulerRows = this._buildBulkRowsFromArticles(sorted, "社會事");
             this.message = "已生成社會事建議 " + sorted.length + " 條（Mock 排序，時間已避開鎖定格與過近區間）";
           },
+          _bulkRowFromSchedulerItem(s) {
+            const when = String(s.schedule_time || "");
+            const dt = this.parseHktWallTimeToDate(when);
+            if (!dt || Number.isNaN(dt.getTime())) {
+              return this._bulkEmptyRow({
+                item_id: String(s.item_id || ""),
+                category: String(s.category_display || "社會事"),
+                title: String(s.title || ""),
+                post_link_type: this._trimPostType(s.suggested_post_type || "link"),
+              });
+            }
+            const p = this._hktPartsFromInstant(dt.getTime());
+            const r = {
+              _id: this._bulkNewRowId(),
+              item_id: String(s.item_id || ""),
+              category: String(s.category_display || "社會事"),
+              title: String(s.title || ""),
+              post_link_type: this._trimPostType(s.suggested_post_type || "link"),
+              year: p.year,
+              month: p.month,
+              day: p.day,
+              hour: p.hour,
+              minute: p.minute,
+              immediate: false,
+              timeHint: "",
+              _bulkHours: [],
+              _bulkMinutes: [],
+            };
+            this._clampBulkRowDate(r);
+            this._bulkRowTimeChange(r);
+            return r;
+          },
+          async generateBulkFromEngine() {
+            if (this.actionBusy) {
+              this.message = "当前有操作进行中，请稍候";
+              return;
+            }
+            const ymd = new Date().toLocaleDateString("sv-SE");
+            this.actionBusy = true;
+            this._apiBypassBusy = true;
+            try {
+              const res = await this.apiFetch("POST scheduler/generate", "/api/scheduler/generate", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  schedule_date: ymd,
+                  sync: true,
+                  include_published_for_repost: true,
+                }),
+              });
+              const data = await res.json().catch(() => ({}));
+              if (!res.ok) {
+                const det = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail || {});
+                throw new Error(det || "generate failed");
+              }
+              const list = data.schedule || [];
+              this.bulkSchedulerRows = list.map((s) => this._bulkRowFromSchedulerItem(s));
+              this.message =
+                "引擎建议已载入 " + this.bulkSchedulerRows.length + " 条｜" + new Date().toLocaleTimeString();
+            } catch (e) {
+              this.message = "引擎生成失败: " + (e.message || e);
+            } finally {
+              this._apiBypassBusy = false;
+              this.actionBusy = false;
+            }
+          },
           generateBulkRepost() {
             const step = Number(this.settings.schedule_window_minutes || 10);
             let cursor = new Date();
@@ -3209,7 +3303,7 @@
               pc
             );
           },
-          confirmBulkSend() {
+          async confirmBulkSend() {
             const rows = this.bulkSchedulerRows || [];
             const step = Number(this.settings.schedule_window_minutes || 10);
             for (let i = 0; i < rows.length; i++) {
@@ -3247,9 +3341,40 @@
               title: r.title,
               post_link_type: r.post_link_type,
             }));
-            console.table(snapshot);
-            this.message =
-              "Scheduler（Mock）：已輸出 " + rows.length + " 條至控制台（未呼叫 API）｜" + new Date().toLocaleTimeString();
+            if (this.mode === "mock") {
+              console.table(snapshot);
+              this.message =
+                "Scheduler（Mock）：已輸出 " + rows.length + " 條至控制台（未呼叫 API）｜" + new Date().toLocaleTimeString();
+              return;
+            }
+            const items = rows
+              .map((r) => ({
+                item_id: String(r.item_id || "").trim(),
+                schedule_time: r.immediate ? "" : this.bulkRowScheduleTimeHkt(r),
+                immediate_publish: !!r.immediate,
+                window_minutes: Number(this.settings.schedule_window_minutes || 10),
+                post_link_type: this._trimPostType(r.post_link_type),
+                post_message: "",
+                image_url: "",
+              }))
+              .filter((x) => x.item_id);
+            if (!items.length) {
+              this.message = "没有可送出的 item_id";
+              return;
+            }
+            this.actionBusy = true;
+            this._apiBypassBusy = true;
+            try {
+              await this.callAction("/api/scheduler/apply", { items, stop_on_error: true }, { internal: true });
+              this.message = "正在刷新看板…";
+              await this.fetchColumns("", { skipBoardLoading: false, skipDefaultMessage: true });
+              this.message = "批量排程已应用（" + items.length + " 条）｜" + new Date().toLocaleTimeString();
+            } catch (e) {
+              this.message = "批量送出失败：" + String(e.message || e);
+            } finally {
+              this._apiBypassBusy = false;
+              this.actionBusy = false;
+            }
           },
           async copyBulkSchedule() {
             const rows = this.bulkSchedulerRows || [];
@@ -3356,5 +3481,6 @@
         };
       }
     </script>
+    <script defer src="/scheduler-widget.js"></script>
   </body>
 </html>

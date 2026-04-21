@@ -11,11 +11,13 @@ from src.dashboard.config import (
     HKT_TZ,
     PENDING_FILE,
     PUBLISHED_FILE,
+    SAMPLES_DIR,
     SCHEDULED_FILE,
 )
 from src.dashboard.data_utils import read_json_list, write_json_list
 from src.dashboard.media_utils import parse_publish_time, round_up_to_window, to_utc_iso_z
 from src.dashboard_api.cms_client import CmsActionClient
+from src.scheduler_plugin.calendar_engine import get_schedule_for_date
 
 
 def _safe_int(value: Any) -> int:
@@ -48,6 +50,65 @@ def _to_hkt_input_time(dt_hkt: datetime) -> str:
     return dt_hkt.strftime("%Y-%m-%dT%H:%M")
 
 
+SCHEDULE_METHOD_STATE_FILE = SAMPLES_DIR / "dashboard_schedule_method_state.json"
+
+
+def _method_state_key(*, post_id: int = 0, post_link_id: str = "") -> str:
+    pl = str(post_link_id or "").strip()
+    if pl:
+        return f"plink:{pl}"
+    pid = int(post_id or 0)
+    if pid > 0:
+        return f"pid:{pid}"
+    return ""
+
+
+def _load_schedule_method_state() -> dict[str, str]:
+    if not SCHEDULE_METHOD_STATE_FILE.exists():
+        return {}
+    try:
+        raw = json.loads(SCHEDULE_METHOD_STATE_FILE.read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            return {str(k): str(v) for k, v in raw.items()}
+    except Exception:
+        pass
+    return {}
+
+
+def _save_schedule_method_state(state: dict[str, str]) -> None:
+    SCHEDULE_METHOD_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    SCHEDULE_METHOD_STATE_FILE.write_text(
+        json.dumps(state, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _normalize_category_for_slots(raw: str) -> str:
+    c = str(raw or "").strip()
+    aliases = {
+        "娛樂": "娛圈事",
+        "娱乐": "娛圈事",
+        "娛圈事": "娛圈事",
+        "心韩": "心韓",
+        "心 韓": "心韓",
+        "心韓": "心韓",
+        "社會": "社會事",
+        "社会事": "社會事",
+        "社會事": "社會事",
+        "大视野": "大視野",
+        "大視野": "大視野",
+        "两岸": "兩岸",
+        "兩岸": "兩岸",
+        "法庭": "法庭事",
+        "法庭事": "法庭事",
+        "消费": "消費",
+        "消費": "消費",
+        "商業事": "商業事",
+        "商业事": "商業事",
+    }
+    return aliases.get(c, c or "社會事")
+
+
 def _early_publish_guard_slots(default_session: dict[str, Any]) -> int:
     raw = default_session.get("cfg_early_publish_guard_slots", default_session.get("early_publish_guard_slots", 2))
     try:
@@ -75,9 +136,6 @@ def _validate_update_time_and_window(
     scheduled_items: list[tuple[datetime, dict[str, Any]]],
     target_action_key: str,
 ) -> tuple[bool, str]:
-    step = int(window_minutes) if int(window_minutes) > 0 else 10
-    if picked_dt.minute % step != 0:
-        return False, f"time must align to {step} minutes"
     if picked_dt <= now_hkt.replace(second=0, microsecond=0):
         return False, "cannot set past time"
     picked_slot = picked_dt.replace(second=0, microsecond=0)
@@ -115,12 +173,11 @@ def _pending_rows_with_sort_dt(rows: list[dict[str, Any]]) -> list[tuple[datetim
 def _plan_publish_slot_adjustments(
     schedule_dt: datetime,
     scheduled_items: list[tuple[datetime, dict[str, Any]]],
-    window_minutes: int,
+    *,
+    allow_shift: bool,
+    target_item: dict[str, Any] | None = None,
 ) -> tuple[bool, str, list[dict[str, Any]], dict[str, Any]]:
-    step = window_minutes if window_minutes > 0 else 10
     target_slot = schedule_dt.replace(second=0, microsecond=0)
-    if target_slot.minute % step != 0:
-        return False, f"time must align to {step} minutes", [], {}
 
     locked_slots: set[datetime] = set()
     locked_rows: dict[datetime, list[dict[str, Any]]] = {}
@@ -134,28 +191,73 @@ def _plan_publish_slot_adjustments(
             unlocked_rows.setdefault(slot, []).append(row)
     if target_slot in locked_slots:
         return False, "target slot is locked", [], {}
+    conflict_rows = list(unlocked_rows.get(target_slot, []))
+    if conflict_rows and not allow_shift:
+        existing = conflict_rows[0]
+        existing_method = str(existing.get("schedule_method", "auto"))
+        return (
+            False,
+            "slot occupied, confirmation required",
+            [],
+            {
+                "requires_confirmation": True,
+                "target_time": target_slot.strftime("%Y-%m-%d %H:%M"),
+                "existing_title": str(existing.get("title", "N/A")),
+                "existing_method": existing_method,
+            },
+        )
 
-    carry_rows = unlocked_rows.pop(target_slot, [])
-    next_slot = target_slot + timedelta(minutes=step)
+    def next_slot_for_row(row: dict[str, Any], after_dt: datetime) -> datetime | None:
+        cat = _normalize_category_for_slots(str(row.get("category", "")))
+        start_date = after_dt.astimezone(HKT_TZ).date()
+        for day_offset in range(0, 8):
+            check_date = start_date + timedelta(days=day_offset)
+            slots = get_schedule_for_date(check_date)
+            for slot in slots:
+                categories = slot.get("categories", []) or []
+                if cat not in categories:
+                    continue
+                slot_dt = datetime.combine(
+                    check_date,
+                    datetime.strptime(str(slot.get("time", "00:00")), "%H:%M").time(),
+                    tzinfo=HKT_TZ,
+                )
+                slot_dt = slot_dt.replace(second=0, microsecond=0)
+                if slot_dt <= after_dt:
+                    continue
+                if slot_dt in locked_slots:
+                    continue
+                return slot_dt
+        return None
+
+    carry_rows = list(unlocked_rows.pop(target_slot, []))
+    carry_queue: list[tuple[dict[str, Any], datetime]] = [(r, target_slot) for r in carry_rows]
     pre_updates: list[dict[str, Any]] = []
     shifted_rows: list[dict[str, str]] = []
     skipped_locked_rows: list[dict[str, str]] = []
     seen_locked: set[str] = set()
 
-    while carry_rows:
-        while next_slot in locked_slots:
-            for row in locked_rows.get(next_slot, []):
-                key = _build_action_key(row)
+    while carry_queue:
+        row, after_dt = carry_queue.pop(0)
+        next_slot = next_slot_for_row(row, after_dt)
+        if not next_slot:
+            return False, "no available slot for shifted article", [], {}
+        existing_rows = list(unlocked_rows.pop(next_slot, []))
+        if next_slot in locked_slots:
+            for lock_row in locked_rows.get(next_slot, []):
+                key = _build_action_key(lock_row)
                 if key in seen_locked:
                     continue
                 seen_locked.add(key)
                 skipped_locked_rows.append(
-                    {"title": str(row.get("title", "N/A")), "locked_time": next_slot.strftime("%Y-%m-%d %H:%M")}
+                    {"title": str(lock_row.get("title", "N/A")), "locked_time": next_slot.strftime("%Y-%m-%d %H:%M")}
                 )
-            next_slot = next_slot + timedelta(minutes=step)
-
-        existing_rows = unlocked_rows.pop(next_slot, [])
-        for row in carry_rows:
+            return False, "next slot is locked", [], {}
+        # 当前 row 放到 next_slot；被占用的原 row 继续排队
+        if existing_rows:
+            for ex in existing_rows:
+                carry_queue.append((ex, next_slot))
+        if row:
             post_id, post_link_id = _extract_action_ids(row)
             if post_id <= 0 or not post_link_id:
                 return False, "scheduled row missing post_id/post_link_id for shift", [], {}
@@ -180,8 +282,6 @@ def _plan_publish_slot_adjustments(
                     "new_time": next_slot.strftime("%Y-%m-%d %H:%M"),
                 }
             )
-        carry_rows = existing_rows
-        next_slot = next_slot + timedelta(minutes=step)
 
     pre_updates.sort(key=lambda x: int(x.get("_old_ts", 0)), reverse=True)
     for row in pre_updates:
@@ -218,6 +318,55 @@ def _refresh_live_sample_files(default_session: dict[str, Any]) -> dict[str, Any
 
 def _sync_live() -> dict[str, Any]:
     return _refresh_live_sample_files(_read_default_session_settings())
+
+
+def sync_live_board_samples() -> dict[str, Any]:
+    """Public entry for scheduler / tools: refresh fb_* sample JSON via CMS."""
+    return _sync_live()
+
+
+def apply_scheduler_batch(
+    items: list[dict[str, Any]],
+    *,
+    stop_on_error: bool = True,
+) -> dict[str, Any]:
+    """Apply generated rows by delegating to publish_from_pending (CMS + sync)."""
+    from src.dashboard.config import DEFAULT_SCHEDULE_WINDOW_MINUTES
+
+    results: list[dict[str, Any]] = []
+    for it in items:
+        item_id = str(it.get("item_id", "")).strip()
+        schedule_time = str(it.get("schedule_time", "")).strip()
+        immediate = bool(it.get("immediate_publish", False))
+        try:
+            win = int(it.get("window_minutes", DEFAULT_SCHEDULE_WINDOW_MINUTES) or DEFAULT_SCHEDULE_WINDOW_MINUTES)
+        except Exception:
+            win = int(DEFAULT_SCHEDULE_WINDOW_MINUTES)
+        if not item_id:
+            row = {"item_id": item_id, "ok": False, "message": "missing item_id"}
+            results.append(row)
+            if stop_on_error:
+                return {"ok": False, "results": results, "message": "missing item_id"}
+            continue
+        r = publish_from_pending(
+            item_id=item_id,
+            schedule_time=schedule_time,
+            window_minutes=win,
+            post_message=str(it.get("post_message", "") or ""),
+            post_link_type=str(it.get("post_link_type", "link") or "link"),
+            image_url=str(it.get("image_url", "") or ""),
+            immediate_publish=immediate,
+            allow_shift=bool(it.get("allow_shift", True)),
+            schedule_method=str(it.get("schedule_method", "auto_plugin") or "auto_plugin"),
+        )
+        results.append({"item_id": item_id, **r})
+        if not bool(r.get("ok")) and stop_on_error:
+            return {
+                "ok": False,
+                "results": results,
+                "message": str(r.get("message", "apply failed")),
+            }
+    return {"ok": True, "results": results, "message": "all applied"}
 
 
 def load_board_columns(includes: list[str] | None = None, *, sync_live: bool = True) -> dict[str, Any]:
@@ -257,6 +406,14 @@ def load_board_columns(includes: list[str] | None = None, *, sync_live: bool = T
 
     published_all = [item for dt, item in sorted(published_items, key=lambda x: x[0], reverse=True)]
     scheduled_all = [item for dt, item in sorted(scheduled_items, key=lambda x: x[0])]
+    method_state = _load_schedule_method_state()
+    for row in scheduled_all:
+        post_id = _safe_int(row.get("post_id", 0))
+        post_link_id = str(row.get("post_link_id", "")).strip()
+        key_pl = _method_state_key(post_link_id=post_link_id)
+        key_pid = _method_state_key(post_id=post_id)
+        method = method_state.get(key_pl) or method_state.get(key_pid) or str(row.get("schedule_method", "auto"))
+        row["schedule_method"] = method
     pending_all_by_category: dict[str, list[dict[str, Any]]] = {c: [] for c in CATEGORY_ORDER}
     for dt, row in sorted(pending_pairs, key=lambda x: x[0], reverse=True):
         category = str(row.get("category", ""))
@@ -322,6 +479,8 @@ def publish_from_pending(
     post_link_type: str = "",
     image_url: str = "",
     immediate_publish: bool = False,
+    allow_shift: bool = False,
+    schedule_method: str = "manual_user",
 ) -> dict[str, Any]:
     pending_rows = read_json_list(PENDING_FILE)
     scheduled_rows = read_json_list(SCHEDULED_FILE)
@@ -329,9 +488,7 @@ def publish_from_pending(
     if not target:
         return {"ok": False, "message": "pending item not found"}
 
-    default_session = _read_default_session_settings()
     now_hkt = datetime.now(HKT_TZ).replace(second=0, microsecond=0)
-    step = int(window_minutes) if int(window_minutes) > 0 else 10
     if immediate_publish:
         schedule_dt = _next_immediate_publish_dt(now_hkt, window_minutes)
     else:
@@ -341,10 +498,6 @@ def publish_from_pending(
             return {"ok": False, "message": "invalid schedule_time format, expected YYYY-MM-DDTHH:mm"}
         if schedule_dt <= now_hkt:
             return {"ok": False, "message": "cannot schedule in the past"}
-        guard_slots = _early_publish_guard_slots(default_session)
-        guard_until = now_hkt + timedelta(minutes=guard_slots * step)
-        if schedule_dt <= guard_until:
-            return {"ok": False, "message": "發佈時間過近，請使用即出"}
 
     msg = str(post_message or "").strip()
     if not msg:
@@ -357,9 +510,17 @@ def publish_from_pending(
     ok_plan, plan_message, pre_updates, impact = _plan_publish_slot_adjustments(
         schedule_dt=schedule_dt,
         scheduled_items=_collect_time_sorted_items(scheduled_rows),
-        window_minutes=window_minutes,
+        allow_shift=allow_shift,
+        target_item=target,
     )
     if not ok_plan:
+        if bool(impact.get("requires_confirmation")):
+            return {
+                "ok": False,
+                "requires_confirmation": True,
+                "message": "slot occupied, confirmation required",
+                **impact,
+            }
         return {"ok": False, "message": plan_message}
 
     client = CmsActionClient()
@@ -394,7 +555,12 @@ def publish_from_pending(
     )
     if not bool(publish_result.get("ok")):
         return {"ok": False, "message": str(publish_result.get("message", "publish failed"))}
-
+    method_state = _load_schedule_method_state()
+    target_post_id = _safe_int(target.get("post_id", 0))
+    key = _method_state_key(post_id=target_post_id)
+    if key:
+        method_state[key] = str(schedule_method or "manual_user")
+        _save_schedule_method_state(method_state)
     sync_result = _sync_live()
     return {"ok": True, "message": "publish ok", "impact_report": impact, "sync_result": sync_result}
 
@@ -403,8 +569,6 @@ def update_scheduled(payload: dict[str, Any]) -> dict[str, Any]:
     immediate = bool(payload.get("immediate_publish", False))
     window_minutes = int(payload.get("window_minutes", 10) or 10)
     now_hkt = datetime.now(HKT_TZ).replace(second=0, microsecond=0)
-    default_session = _read_default_session_settings()
-    step = int(window_minutes) if int(window_minutes) > 0 else 10
     if immediate:
         picked_dt = _next_immediate_publish_dt(now_hkt, window_minutes)
     else:
@@ -413,10 +577,10 @@ def update_scheduled(payload: dict[str, Any]) -> dict[str, Any]:
             picked_dt = datetime.strptime(picked_time, "%Y-%m-%dT%H:%M").replace(tzinfo=HKT_TZ)
         except ValueError:
             return {"ok": False, "message": "invalid time format, expected YYYY-MM-DDTHH:mm (HKT)"}
-        guard_slots = _early_publish_guard_slots(default_session)
-        guard_until = now_hkt + timedelta(minutes=guard_slots * step)
-        if picked_dt <= guard_until:
-            return {"ok": False, "message": "發佈時間過近，請使用即出"}
+
+    scheduled_rows = read_json_list(SCHEDULED_FILE)
+    target_action_key = str(payload.get("target_action_key", "")).strip()
+    allow_shift = bool(payload.get("allow_shift", False))
 
     enforce_window = bool(payload.get("enforce_time_validation", True))
     if enforce_window:
@@ -424,13 +588,51 @@ def update_scheduled(payload: dict[str, Any]) -> dict[str, Any]:
             picked_dt=picked_dt,
             now_hkt=datetime.now(HKT_TZ),
             window_minutes=window_minutes,
-            scheduled_items=_collect_time_sorted_items(read_json_list(SCHEDULED_FILE)),
-            target_action_key=str(payload.get("target_action_key", "")).strip(),
+            scheduled_items=_collect_time_sorted_items(scheduled_rows),
+            target_action_key=target_action_key,
         )
         if not ok_time:
             return {"ok": False, "message": msg_time}
 
+    scheduled_without_target: list[tuple[datetime, dict[str, Any]]] = []
+    for dt, row in _collect_time_sorted_items(scheduled_rows):
+        if _build_action_key(row) == target_action_key:
+            continue
+        scheduled_without_target.append((dt, row))
+
+    ok_plan, plan_message, pre_updates, impact = _plan_publish_slot_adjustments(
+        schedule_dt=picked_dt,
+        scheduled_items=scheduled_without_target,
+        allow_shift=allow_shift,
+        target_item=payload,
+    )
+    if not ok_plan:
+        if bool(impact.get("requires_confirmation")):
+            return {
+                "ok": False,
+                "requires_confirmation": True,
+                "message": "slot occupied, confirmation required",
+                **impact,
+            }
+        return {"ok": False, "message": plan_message}
+
     client = CmsActionClient()
+    for row in pre_updates:
+        update_result = client.run_action(
+            "fb_update",
+            {
+                "post_id": int(row.get("post_id", 0)),
+                "post_link_id": str(row.get("post_link_id", "")),
+                "post_message": str(row.get("post_message", "")),
+                "post_link_time": str(row.get("post_link_time", "")),
+                "post_link_type": str(row.get("post_link_type", "link")),
+                "image_url": str(row.get("image_url", "")) or None,
+                "post_mp4_url": str(row.get("post_mp4_url", "")) or None,
+                "post_timezone": str(row.get("post_timezone", "UTC")),
+            },
+        )
+        if not bool(update_result.get("ok")):
+            return {"ok": False, "message": f"shift update failed: {update_result.get('message', 'unknown')}"}
     action_payload = {
         "post_id": int(payload.get("post_id", 0)),
         "post_link_id": str(payload.get("post_link_id", "")).strip(),
@@ -444,7 +646,16 @@ def update_scheduled(payload: dict[str, Any]) -> dict[str, Any]:
     result = client.run_action("fb_update", action_payload)
     if not bool(result.get("ok")):
         return {"ok": False, "message": str(result.get("message", "update failed"))}
-    return {"ok": True, "message": "update ok", "sync_result": _sync_live()}
+    method_state = _load_schedule_method_state()
+    key_pl = _method_state_key(post_link_id=str(payload.get("post_link_id", "")).strip())
+    key_pid = _method_state_key(post_id=_safe_int(payload.get("post_id", 0)))
+    method = str(payload.get("schedule_method", "manual_user") or "manual_user")
+    if key_pl:
+        method_state[key_pl] = method
+    elif key_pid:
+        method_state[key_pid] = method
+    _save_schedule_method_state(method_state)
+    return {"ok": True, "message": "update ok", "impact_report": impact, "sync_result": _sync_live()}
 
 
 def delete_scheduled(post_id: int, post_link_id: str) -> dict[str, Any]:
