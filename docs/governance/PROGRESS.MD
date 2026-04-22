@@ -1500,3 +1500,21 @@
 
 下一步:
 - 已进入可 push 状态；本次记录与迁移代码一起提交并推送到 `public`（fb demo website）仓库 `main`。
+
+日期时间(HKT): 2026-04-21（插件文件内置入库）
+负责人/LLM: wangz / GPT-5.4
+分支/worktree: feature/bot-ui-ops（本仓库）
+完成内容:
+- [本仓库] 将同事插件本体文件纳入当前仓库版本管理：新增 `frontend/legacy_scheduler/templates/console.html` 与 `frontend/legacy_scheduler/static/bastille-widget.js`，避免同事机器运行时依赖额外外部仓库路径。
+- [本仓库] 调整 `src/dashboard_api/server.py` 兼容层默认加载路径：`LEGACY_SCHEDULER_REPO` 未显式配置时，默认改为仓库内置 `frontend/legacy_scheduler`；仍保留环境变量覆盖能力，便于必要时切回外部插件目录。
+- [本仓库] 补充缺失提示可观测性：当 legacy `console.html` 或 `bastille-widget.js` 不存在时，返回信息包含实际查找路径，便于跨机排错。
+
+验证结果:
+- 语法检查：`python -m py_compile src/dashboard_api/server.py` 通过。
+- 文件检查：`frontend/legacy_scheduler` 下 `templates/console.html` 与 `static/bastille-widget.js` 已存在并待纳入提交。
+
+风险/阻塞:
+- 当前工作区另有 `src/scheduler_plugin/*` 与 `tests/test_scheduler_plugin.py` 的行尾/触碰改动，非本次“插件文件内置”目标，提交时应分离，避免噪音进入历史。
+
+下一步:
+- 提交并推送本次 3 个目标文件（`server.py` + 两个 legacy 文件）到 `public/main`，同事侧执行 `git pull` 后即可直接加载插件。

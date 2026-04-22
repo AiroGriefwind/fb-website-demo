@@ -81,7 +81,10 @@ WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_DIR = WORKSPACE_ROOT / "frontend" / "board"
 SETTINGS_STATE_FILE = SAMPLES_DIR / "dashboard_settings_state.json"
 LEGACY_SCHEDULER_ROOT = Path(
-    os.getenv("LEGACY_SCHEDULER_REPO", "D:/workFiles/FB-scheduler-project")
+    os.getenv(
+        "LEGACY_SCHEDULER_REPO",
+        str(WORKSPACE_ROOT / "frontend" / "legacy_scheduler"),
+    )
 )
 LEGACY_CONSOLE_FILE = LEGACY_SCHEDULER_ROOT / "templates" / "console.html"
 LEGACY_WIDGET_FILE = LEGACY_SCHEDULER_ROOT / "static" / "bastille-widget.js"
@@ -114,7 +117,7 @@ def root() -> RedirectResponse:
 
 def _load_legacy_console_html() -> str:
     if not LEGACY_CONSOLE_FILE.exists():
-        return "<h1>Legacy console file not found.</h1>"
+        return f"<h1>Legacy console file not found: {LEGACY_CONSOLE_FILE}</h1>"
     html = LEGACY_CONSOLE_FILE.read_text(encoding="utf-8")
     html = html.replace(
         'const BASE_URL = "http://127.0.0.1:8000";',
@@ -243,7 +246,7 @@ def _load_legacy_console_html() -> str:
 
 def _load_legacy_widget_js() -> str:
     if not LEGACY_WIDGET_FILE.exists():
-        return "console.error('Legacy widget file not found.');"
+        return f"console.error('Legacy widget file not found: {LEGACY_WIDGET_FILE.as_posix()}');"
     js = LEGACY_WIDGET_FILE.read_text(encoding="utf-8")
     js = js.replace(
         'const BASE_URL = "http://127.0.0.1:8000";',

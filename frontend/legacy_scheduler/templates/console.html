@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>BastillePost Schedule Editor</title>
+<style>
+body { font-family: Arial; padding: 20px; }
+h2 { margin-bottom: 10px; }
+button { padding: 8px 12px; margin: 5px 5px 5px 0; cursor: pointer; }
+table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: top; }
+th { background-color: #f4f4f4; }
+select, input { width: 100%; padding: 4px; }
+.immediate-cell { text-align: center; }
+.copy-success { color: green; margin-left: 10px; }
+
+.title-wrapper { position: relative; }
+
+.dropdown-btn {
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 30px;
+    height: 100%;
+    cursor: pointer;
+    background: #eee;
+    border-left: 1px solid #ccc;
+    text-align: center;
+    line-height: 28px;
+}
+
+.suggestion-box {
+    border: 1px solid #ddd;
+    background: white;
+    max-height: 200px;
+    overflow-y: auto;
+    position: absolute;
+    width: 100%;
+    z-index: 100;
+}
+
+.suggestion-item {
+    padding: 5px;
+    cursor: pointer;
+    border-bottom: 1px solid #eee;
+}
+
+.suggestion-item:hover {
+    background: #f0f0f0;
+}
+</style>
+</head>
+<body>
+
+<div id="scheduler-root">
+<h2>📦 BastillePost Schedule Editor </h2>
+
+<button onclick="window.parent.postMessage('close-console', '*')"
+        style="position:fixed; top:10px; right:10px; z-index:9999;">
+    ✕ 關閉
+</button>
+<button onclick="generateEntertainment()">🎬 生成排程建議</button>
+<button onclick="generateRepostOnly()">🔁 生成 Repost 建議</button>
+<button onclick="addRow()">➕ 新增排程</button>
+<button id="confirmBtn">✅ 確認送出</button>
+<button onclick="copySchedule()">📋 複製排程</button>
+<span id="copyStatus" class="copy-success"></span>
+<button id="muteBtn">🔔 聲音開</button>
+<span id="alertCount" style="margin-left:10px;font-weight:bold;color:#b30000;">
+    🔔 0
+</span>
+
+<div id="alertBar" style="
+    margin-top:15px;
+    padding:12px;
+    background:#ffe5e5;
+    color:#b30000;
+    font-weight:bold;
+    border-radius:6px;
+    display:none;
+">
+</div>
+
+<table id="scheduleTable">
+<thead>
+<tr>
+<th>刪除</th>
+<th>即推</th>
+<th>時間</th>
+<th>欄目</th>
+<th>標題</th>
+<th>貼文類型</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+</div>
+
+<script>
+/* ======================
+   🔗 API 基本設定
+====================== */
+
+const BASE_URL = "http://127.0.0.1:8000";
+const TOKEN = "bastillepost_scheduler";
+
+/* ✅ 桌面通知初始化 */
+if ("Notification" in window) {
+    Notification.requestPermission();
+}
+
+/* ======================
+   🔊 聲音控制系統
+====================== */
+
+let audioContext;
+let soundEnabled = false;
+let isMuted = false;
+let lastSoundTime = 0;
+
+// ✅ 解鎖音訊（第一次點擊頁面）
+document.addEventListener("click", () => {
+    if (!soundEnabled) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        soundEnabled = true;
+        console.log("🔊 Sound unlocked");
+    }
+}, { once: true });
+
+// ✅ 靜音按鈕
+document.addEventListener("DOMContentLoaded", () => {
+    const btn = document.getElementById("muteBtn");
+    if (btn) {
+        btn.addEventListener("click", () => {
+            isMuted = !isMuted;
+            btn.innerText = isMuted ? "🔕 靜音中" : "🔔 聲音開";
+        });
+    }
+
+    const confirmBtn = document.getElementById("confirmBtn");
+    if (confirmBtn) {
+    confirmBtn.addEventListener("click", confirmSchedule);
+    }
+
+});
+
+// ✅ 播放聲音（依類型）
+function playAlertSound(type = "normal") {
+
+    if (!soundEnabled || isMuted || !audioContext) return;
+
+    const now = Date.now();
+    if (now - lastSoundTime < 3000) return;
+    lastSoundTime = now;
+
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+
+    oscillator.type = "sine";
+
+    // 即推高頻
+    if (type === "immediate") {
+        oscillator.frequency.setValueAtTime(1200, audioContext.currentTime);
+    }
+    // 插排低頻
+    else {
+        oscillator.frequency.setValueAtTime(700, audioContext.currentTime);
+    }
+
+    gainNode.gain.setValueAtTime(0.4, audioContext.currentTime);
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+
+    oscillator.start();
+    oscillator.stop(audioContext.currentTime + 0.25);
+}
+
+/* ======================
+   📡 自動 Alert 輪詢
+====================== */
+
+let unreadCount = 0;
+
+async function pollAlerts() {
+    try {
+        const res = await fetch(`${BASE_URL}/alerts/pending`, {
+            headers: { "Authorization": `Bearer ${TOKEN}` }
+        });
+
+        const data = await res.json();
+
+        if (data.status === "success" && data.alert) {
+
+            const bar = document.getElementById("alertBar");
+            const countEl = document.getElementById("alertCount");
+
+            unreadCount++;
+            countEl.innerText = `🔔 ${unreadCount}`;
+
+            let message = "";
+
+            if (data.alert.type === "immediate_push") {
+                message = "🚨 即推推薦觸發！建議立即檢視排程";
+                playAlertSound("immediate");
+            }
+
+            if (data.alert.type === "insert_recommendation") {
+                message = "📌 插排推薦觸發！請檢查排程";
+                playAlertSound("normal");
+            }
+
+            // ✅ 顯示 UI Alert Bar
+            bar.innerText = message;
+            bar.style.display = "block";
+
+            // ✅ 桌面通知
+            if (Notification.permission === "granted") {
+                new Notification("BastillePost Alert", {
+                    body: message
+                });
+            }
+
+            // 6 秒後自動淡出
+            setTimeout(() => {
+                bar.style.display = "none";
+            }, 6000);
+        }
+
+    } catch (err) {
+        console.log("Alert polling error:", err);
+    }
+}
+
+// 每 10 秒檢查一次
+setInterval(pollAlerts, 10000);
+
+/* =============================
+   📝 原排程功能（手動不發聲）
+============================= */
+let scheduleGenerated = false;
+let repostLoaded = false;
+
+/* ✅ 建立 Row */
+function createRow(data = {}) {
+    const tbody = document.querySelector("#scheduleTable tbody");
+    const row = document.createElement("tr");
+
+    row.innerHTML = `
+        <td><button onclick="this.closest('tr').remove()">❌</button></td>
+        <td class="immediate-cell"><input type="checkbox" class="immediate"></td>
+        <td><input type="datetime-local" class="time"></td>
+        <td>
+            <select class="category">
+                <option>社會事</option>
+                <option>兩岸</option>
+                <option>大視野</option>
+                <option>法庭事</option>
+                <option>消費</option>
+                <option>娛圈事</option>
+                <option>心韓</option>
+                <option>Repost</option>
+            </select>
+        </td>
+        <td>
+            <div class="title-wrapper">
+                <input type="text" class="title" oninput="searchArticles(this)">
+                <div class="dropdown-btn" onclick="loadLatest(this)">▼</div>
+                <input type="hidden" class="articleId">
+                <div class="suggestion-box"></div>
+            </div>
+        </td>
+        <td>
+            <select class="postType">
+                <option value="text_post">text_post</option>
+                <option value="photo_post">photo_post</option>
+                <option value="video_post">video_post</option>
+                <option value="link_post">link_post</option>
+            </select>
+        </td>
+    `;
+
+    tbody.appendChild(row);
+
+    if (data.title) row.querySelector(".title").value = data.title;
+    if (data.category) row.querySelector(".category").value = data.category;
+    if (data.time) row.querySelector(".time").value = data.time.replace(" ", "T");
+    if (data.post_type) row.querySelector(".postType").value = data.post_type;
+
+    const immediateCheckbox = row.querySelector(".immediate");
+    const timeInput = row.querySelector(".time");
+
+    immediateCheckbox.addEventListener("change", () => {
+        if (immediateCheckbox.checked) {
+            timeInput.value = "";
+            timeInput.disabled = true;
+        } else {
+            timeInput.disabled = false;
+        }
+    });
+}
+
+function addRow() {
+    createRow();
+}
+
+/* ✅ 搜尋文章 */
+async function searchArticles(inputElement) {
+    const keyword = inputElement.value.trim();
+    const row = inputElement.closest("tr");
+    const suggestionBox = row.querySelector(".suggestion-box");
+    const category = row.querySelector(".category").value;
+
+    row.querySelector(".articleId").value = "";
+
+    if (keyword.length < 2) {
+        suggestionBox.innerHTML = "";
+        return;
+    }
+
+    let url = `${BASE_URL}/articles/search?q=${encodeURIComponent(keyword)}&category=${encodeURIComponent(category)}`;
+
+    const res = await fetch(url, {
+        headers: { "Authorization": `Bearer ${TOKEN}` }
+    });
+
+    const data = await res.json();
+    renderSuggestions(row, data.results || []);
+}
+
+/* ✅ ▼ 取得最新文章 */
+async function loadLatest(button) {
+    const row = button.closest("tr");
+    const suggestionBox = row.querySelector(".suggestion-box");
+    const category = row.querySelector(".category").value;
+
+    if (suggestionBox.innerHTML.trim() !== "") {
+        suggestionBox.innerHTML = "";
+        return;
+    }
+
+    let url = `${BASE_URL}/articles/latest?category=${encodeURIComponent(category)}`;
+
+    const res = await fetch(url, {
+        headers: { "Authorization": `Bearer ${TOKEN}` }
+    });
+
+    const data = await res.json();
+    renderSuggestions(row, data.results || []);
+}
+
+/* ✅ 渲染下拉 */
+function renderSuggestions(row, articles) {
+    const suggestionBox = row.querySelector(".suggestion-box");
+    suggestionBox.innerHTML = "";
+
+    articles.forEach(article => {
+        const div = document.createElement("div");
+        div.className = "suggestion-item";
+        div.innerText = article.title;
+
+        div.onclick = () => {
+            row.querySelector(".title").value = article.title;
+            row.querySelector(".articleId").value = article.id;
+            suggestionBox.innerHTML = "";
+        };
+
+        suggestionBox.appendChild(div);
+    });
+}
+
+/* ✅ 點擊外部關閉下拉 */
+document.addEventListener("click", function (e) {
+    document.querySelectorAll(".suggestion-box").forEach(box => {
+        if (!box.contains(e.target) &&
+            !box.closest(".title-wrapper").contains(e.target)) {
+            box.innerHTML = "";
+        }
+    });
+});
+
+/* ✅ 娛樂防重複 */
+async function generateEntertainment() {
+
+    if (scheduleGenerated) {
+        alert("排程建議已生成，避免重複。");
+        return;
+    }
+
+    const today = new Date().toLocaleDateString("sv-SE");
+
+    const res = await fetch(`${BASE_URL}/schedule/generate`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${TOKEN}`
+        },
+        body: JSON.stringify({
+            schedule_date: today
+        })
+    });
+
+    const data = await res.json();
+
+    if (data.schedule) {
+
+        // ✅ 先清空舊排程（重要）
+        document.querySelector("#scheduleTable tbody").innerHTML = "";
+
+        data.schedule.forEach(item => {
+            createRow({
+                title: item.title,
+                category: item.category,
+                time: item.time,
+                post_type: item.suggested_post_type
+            });
+        });
+
+        scheduleGenerated = true;
+    }
+}
+
+/* ✅ Repost 防重複 */
+async function generateRepostOnly() {
+
+    const res = await fetch(`${BASE_URL}/repost/generate`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${TOKEN}` }
+    });
+
+    const data = await res.json();
+
+    if (data.status !== "success") {
+        alert("Repost 生成失敗");
+        return;
+    }
+
+    // ✅ 沒有產生建議
+    if (!data.schedule || data.schedule.length === 0) {
+        alert("過去 24 小時沒有高 engagement 貼文");
+        return;
+    }
+
+    // ✅ 有產生建議
+    data.schedule.forEach(item => {
+        createRow({
+            title: `[Repost] ${item.title}`,
+            category: "Repost",
+            time: item.time,
+            post_type: item.suggested_post_type
+        });
+    });
+
+    alert("Repost 建議已生成");
+}
+
+/* ✅ confirm / copy 保持你原本版本 */
+
+    /* ✅ 確認送出排程 */
+async function confirmSchedule(event) {
+
+    const btn = event.target;
+    btn.disabled = true;
+    btn.innerText = "送出中...";
+
+    try {
+
+        const rows = document.querySelectorAll("#scheduleTable tbody tr");
+        const scheduleData = [];
+
+        rows.forEach(row => {
+            scheduleData.push({
+                title: row.querySelector(".title").value,
+                category: row.querySelector(".category").value,
+                scheduled_time: row.querySelector(".time").value,
+                post_type: row.querySelector(".postType").value,
+                is_immediate: row.querySelector(".immediate").checked
+            });
+        });
+
+        const response = await fetch("/schedule/confirm", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                batch_id: Date.now().toString(),
+                user_id: "admin",
+                posts: scheduleData
+            })
+        });
+
+        const data = await res.json();
+
+        if (data.status === "success") {
+            alert("✅ 排程確認成功！");
+        } else {
+            alert("❌ 送出失敗");
+        }
+
+    } catch (err) {
+        console.error(err);
+        alert("❌ API 錯誤");
+    }
+
+    btn.disabled = false;
+    btn.innerText = "✅ 確認送出";
+}
+
+/* ✅ 複製排程 */
+function copySchedule() {
+
+    const rows = document.querySelectorAll("#scheduleTable tbody tr");
+    let text = "";
+
+    rows.forEach(row => {
+        const title = row.querySelector(".title").value;
+        const time = row.querySelector(".time").value;
+        const category = row.querySelector(".category").value;
+
+        text += `${time} | ${category} | ${title}\n`;
+    });
+
+    navigator.clipboard.writeText(text);
+
+    const status = document.getElementById("copyStatus");
+    status.innerText = "✅ 已複製";
+    setTimeout(() => status.innerText = "", 2000);
+}
+
+</script>
+
+</body>
+</html>
