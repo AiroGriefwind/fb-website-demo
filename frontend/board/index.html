@@ -990,6 +990,20 @@
                                 📅
                               </button>
                             </template>
+                            <template x-if="col.kind === 'published'">
+                              <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-start;">
+                                <button
+                                  type="button"
+                                  class="btn btn-icon-emoji"
+                                  title="從 CMS / Facebook 刪除此已發佈貼文"
+                                  aria-label="刪除已發佈貼文"
+                                  @click="openDeletePublishedDialog(item)"
+                                  :disabled="loading || actionBusy || item._optimistic || !Number(item.post_id) || !String(item.post_link_id || '').trim()"
+                                >
+                                  🗑️
+                                </button>
+                              </div>
+                            </template>
                             <template x-if="col.kind === 'scheduled'">
                               <div style="display:flex; gap:6px; flex-wrap:wrap;">
                                 <button
@@ -1237,6 +1251,19 @@
           </div>
         </div>
 
+        <div class="modal-mask" x-show="dialogs.deletePublished.open" x-transition.opacity>
+          <div class="modal">
+            <h3>確認刪除已發佈貼文</h3>
+            <div class="tiny" style="margin-top:8px;" x-text="'確定要從 CMS / Facebook 刪除《' + (dialogs.deletePublished.item?.title || 'N/A') + '》？此操作不可撤銷。'"></div>
+            <div class="tiny" style="margin-top:6px;word-break:break-all;" x-text="'post_id: ' + (dialogs.deletePublished.item?.post_id ?? '') + '｜post_link_id: ' + (dialogs.deletePublished.item?.post_link_id || '')"></div>
+            <div class="error-text" x-show="dialogs.deletePublished.error" x-text="dialogs.deletePublished.error"></div>
+            <div class="actions">
+              <button type="button" class="btn" @click="closeDialog('deletePublished')">返回</button>
+              <button type="button" class="btn primary" @click="confirmDeletePublished()">確認刪除</button>
+            </div>
+          </div>
+        </div>
+
         <div
           class="modal-mask"
           x-show="dialogs.bulkScheduler.open"
@@ -1432,6 +1459,7 @@
             schedule: { open: false, item: null, error: "", urlHint: "" },
             update: { open: false, item: null, error: "", urlHint: "" },
             delete: { open: false, item: null, error: "" },
+            deletePublished: { open: false, item: null, error: "" },
             nearImmediate: { open: false, scope: "", bulkRowIndex: -1 },
             bulkScheduler: { open: false },
             bulkRowDelete: { open: false, index: -1 },
@@ -1624,7 +1652,12 @@
               const data = await res.json();
               this._mergeUpstreamIntoApiLog(data);
               if (!this.raw || !includeExpr) {
-                this.raw = data;
+                // 避免与「即出 / 排程 / 修改」等操作并发：晚到的全量 columns 响应会整包替换 raw，冲掉乐观 UI
+                if (this.actionBusy && this.raw) {
+                  /* skip full replace while action in progress */
+                } else {
+                  this.raw = data;
+                }
               } else {
                 if (Array.isArray(data.published) && includeExpr.includes("published")) this.raw.published = data.published;
                 if (Array.isArray(data.scheduled) && includeExpr.includes("scheduled")) this.raw.scheduled = data.scheduled;
@@ -1934,10 +1967,14 @@
             }
             const itemId = String(item.item_id || "");
             const snap = this._cloneRaw();
+            this.actionBusy = true;
+            this._apiBypassBusy = true;
+            this.message = immediate ? "正在呼叫 FB 即刻發佈 API（publish）…" : "正在呼叫 FB 排程 API（publish）…";
             const optId = "opt-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+            const nowIsoZ = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
             const optimistic = {
               ...item,
-              publish_time: when,
+              publish_time: immediate ? nowIsoZ : when,
               post_message: pickedMsg,
               post_link_type: pickedType,
               image_url: pickedImage,
@@ -1947,12 +1984,14 @@
             };
             this.closeDialog("schedule");
             this._removePendingByItemId(cat, itemId);
-            if (!Array.isArray(this.raw.scheduled)) this.raw.scheduled = [];
-            this.raw.scheduled = [optimistic, ...this.raw.scheduled];
+            if (immediate) {
+              if (!Array.isArray(this.raw.published)) this.raw.published = [];
+              this.raw.published = [optimistic, ...this.raw.published];
+            } else {
+              if (!Array.isArray(this.raw.scheduled)) this.raw.scheduled = [];
+              this.raw.scheduled = [optimistic, ...this.raw.scheduled];
+            }
             this.rebuildColumns();
-            this.actionBusy = true;
-            this.message = "正在呼叫 FB 排程 API（publish）…";
-            this._apiBypassBusy = true;
             try {
               const payload = {
                 item_id: itemId,
@@ -1989,14 +2028,24 @@
                   throw e;
                 }
               }
-              const include = "scheduled" + (cat ? (",pending:" + cat) : ",pending");
-              this.message = "正在同步已排程与「" + (cat || "全部") + "」已出未排…";
+              const include = immediate
+                ? "published,scheduled" + (cat ? ",pending:" + cat : ",pending")
+                : "scheduled" + (cat ? ",pending:" + cat : ",pending");
+              this.message = immediate
+                ? "正在同步已發佈、已排程与「" + (cat || "全部") + "」已出未排…"
+                : "正在同步已排程与「" + (cat || "全部") + "」已出未排…";
               await this.fetchColumns(include, { skipBoardLoading: true, skipDefaultMessage: true, rethrow: true, skipSync: true });
               const impact = data?.impact_report || {};
               const shifted = Array.isArray(impact.shifted_rows) ? impact.shifted_rows.length : 0;
               const locked = Array.isArray(impact.skipped_locked_rows) ? impact.skipped_locked_rows.length : 0;
-              let msg = "排程成功｜已刷新 " + new Date().toLocaleTimeString();
-              if (shifted || locked) msg = `排程成功｜顺延 ${shifted} 篇｜锁定跳过 ${locked} 篇｜已刷新 ` + new Date().toLocaleTimeString();
+              let msg = immediate
+                ? "即刻發佈成功｜已刷新 " + new Date().toLocaleTimeString()
+                : "排程成功｜已刷新 " + new Date().toLocaleTimeString();
+              if (shifted || locked) {
+                msg = immediate
+                  ? `即刻發佈成功｜顺延 ${shifted} 篇｜锁定跳过 ${locked} 篇｜已刷新 ` + new Date().toLocaleTimeString()
+                  : `排程成功｜顺延 ${shifted} 篇｜锁定跳过 ${locked} 篇｜已刷新 ` + new Date().toLocaleTimeString();
+              }
               this.message = msg;
             } catch (e) {
               this._restoreRaw(snap);
@@ -2090,25 +2139,60 @@
               this.dialogs.update.error = "找不到该排程卡片";
               return;
             }
+            const cat =
+              this._resolveKnownCategoryColumnKey(item) ||
+              this._resolveCategoryColumnKey(item) ||
+              String(item.category || "");
+            const itemId = String(
+              item.item_id != null && String(item.item_id).trim() !== ""
+                ? item.item_id
+                : item.post_id != null
+                  ? item.post_id
+                  : ""
+            ).trim();
+            if (immediate && !itemId) {
+              this.dialogs.update.error = "缺少 item_id / post_id，無法即出";
+              return;
+            }
             const snap = this._cloneRaw();
+            this.actionBusy = true;
+            this._apiBypassBusy = true;
             const optId = "opt-" + Date.now() + "-u";
             this.closeDialog("update");
-            const row = this.raw.scheduled[idx];
-            Object.assign(row, {
-              publish_time: when,
-              post_message: pickedMsg,
-              post_link_type: pickedType,
-              image_url: pickedImage,
-              post_mp4_url: "",
-              _optimistic: true,
-              _optimisticPhase: "loading",
-              _optTempId: optId,
-            });
+            if (immediate) {
+              this.message = "正在取消排程並即刻發佈…";
+              const [removed] = this.raw.scheduled.splice(idx, 1);
+              const nowIsoZ = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+              const optimistic = {
+                ...removed,
+                publish_time: nowIsoZ,
+                post_message: pickedMsg,
+                post_link_type: pickedType,
+                image_url: pickedImage,
+                post_mp4_url: "",
+                _optimistic: true,
+                _optimisticPhase: "loading",
+                _optTempId: optId,
+              };
+              if (!Array.isArray(this.raw.published)) this.raw.published = [];
+              this.raw.published = [optimistic, ...this.raw.published];
+            } else {
+              this.message = "正在呼叫 FB 更新排程 API（update）…";
+              const row = this.raw.scheduled[idx];
+              Object.assign(row, {
+                publish_time: when,
+                post_message: pickedMsg,
+                post_link_type: pickedType,
+                image_url: pickedImage,
+                post_mp4_url: "",
+                _optimistic: true,
+                _optimisticPhase: "loading",
+                _optTempId: optId,
+              });
+            }
             this.rebuildColumns();
-            this.actionBusy = true;
-            this.message = "正在呼叫 FB 更新排程 API（update）…";
-            this._apiBypassBusy = true;
             try {
+              const win = Number(this.settings.schedule_window_minutes || 10);
               const payload = {
                 post_id: Number(item.post_id || 0),
                 post_link_id: String(item.post_link_id || ""),
@@ -2117,9 +2201,10 @@
                 post_link_type: pickedType,
                 image_url: pickedImage,
                 post_mp4_url: "",
+                item_id: immediate ? itemId : "",
                 enforce_time_validation: true,
                 target_action_key: "plink:" + String(item.post_link_id || ""),
-                window_minutes: Number(this.settings.schedule_window_minutes || 10),
+                window_minutes: win,
                 immediate_publish: immediate,
                 allow_shift: false,
                 schedule_method: "manual_user",
@@ -2135,7 +2220,25 @@
                     `該時間窗口已有文章：${existedTitle}\n排程方式：${existedMethod}\n是否順延並覆蓋該窗口？`
                   );
                   if (confirmed) {
-                    await this.callAction("/api/actions/update", { ...payload, allow_shift: true }, { internal: true });
+                    if (immediate) {
+                      await this.callAction(
+                        "/api/actions/publish",
+                        {
+                          item_id: itemId,
+                          schedule_time: when,
+                          window_minutes: win,
+                          post_message: pickedMsg,
+                          post_link_type: pickedType,
+                          image_url: pickedType === "photo" ? pickedImage : "",
+                          immediate_publish: true,
+                          allow_shift: true,
+                          schedule_method: "manual_user",
+                        },
+                        { internal: true }
+                      );
+                    } else {
+                      await this.callAction("/api/actions/update", { ...payload, allow_shift: true }, { internal: true });
+                    }
                   } else {
                     throw new Error("使用者取消順延");
                   }
@@ -2143,9 +2246,16 @@
                   throw e;
                 }
               }
-              this.message = "正在刷新已排程列…";
-              await this.fetchColumns("scheduled", { skipBoardLoading: true, skipDefaultMessage: true, rethrow: true, skipSync: true });
-              this.message = "修改成功｜已排程已更新 " + new Date().toLocaleTimeString();
+              if (immediate) {
+                const include = "published,scheduled" + (cat ? ",pending:" + cat : ",pending");
+                this.message = "正在同步已發佈、已排程与「" + (cat || "全部") + "」已出未排…";
+                await this.fetchColumns(include, { skipBoardLoading: true, skipDefaultMessage: true, rethrow: true, skipSync: true });
+                this.message = "即刻發佈成功｜已刷新 " + new Date().toLocaleTimeString();
+              } else {
+                this.message = "正在刷新已排程列…";
+                await this.fetchColumns("scheduled", { skipBoardLoading: true, skipDefaultMessage: true, rethrow: true, skipSync: true });
+                this.message = "修改成功｜已排程已更新 " + new Date().toLocaleTimeString();
+              }
             } catch (e) {
               this._restoreRaw(snap);
               this.rebuildColumns();
@@ -2162,6 +2272,74 @@
               return;
             }
             this.dialogs.delete = { open: true, item: item, error: "" };
+          },
+          openDeletePublishedDialog(item) {
+            if (this.mode === "live" && this.actionBusy) {
+              this.message = "当前有贴文操作进行中，请稍候";
+              return;
+            }
+            if (item && item._optimistic) {
+              this.message = "請等待發佈完成後再刪除";
+              return;
+            }
+            const postId = Number(item?.post_id || 0);
+            const postLinkId = String(item?.post_link_id || "").trim();
+            if (!postId || !postLinkId) {
+              this.message = "該貼文缺少 post_id / post_link_id，無法刪除";
+              return;
+            }
+            this.dialogs.deletePublished = { open: true, item: item, error: "" };
+          },
+          async confirmDeletePublished() {
+            const item = this.dialogs.deletePublished.item;
+            if (!item) return;
+            const postId = Number(item.post_id || 0);
+            const postLinkId = String(item.post_link_id || "").trim();
+            if (!postId || !postLinkId) {
+              this.dialogs.deletePublished.error = "缺少 post_id 或 post_link_id";
+              return;
+            }
+            if (this.mode === "mock") {
+              this.closeDialog("deletePublished");
+              const arr = this.raw.published || [];
+              this.raw.published = arr.filter(
+                (r) => !(Number(r.post_id || 0) === postId && String(r.post_link_id || "").trim() === postLinkId)
+              );
+              this.rebuildColumns();
+              this.message = "Mock：已從已發佈移除";
+              return;
+            }
+            const snap = this._cloneRaw();
+            this.closeDialog("deletePublished");
+            const pub = this.raw.published || [];
+            const idx = pub.findIndex(
+              (r) =>
+                (postLinkId && String(r.post_link_id || "").trim() === postLinkId) ||
+                (postId && Number(r.post_id || 0) === postId)
+            );
+            if (idx >= 0) pub.splice(idx, 1);
+            this.rebuildColumns();
+            this.actionBusy = true;
+            this._apiBypassBusy = true;
+            this.message = "正在呼叫 FB 刪除已發佈 API（delete）…";
+            try {
+              await this.callAction("/api/actions/delete", { post_id: postId, post_link_id: postLinkId }, { internal: true });
+              await this.fetchColumns("published", {
+                skipBoardLoading: true,
+                skipDefaultMessage: true,
+                rethrow: true,
+                skipSync: true,
+              });
+              this.message = "刪除已發佈成功｜已刷新 " + new Date().toLocaleTimeString();
+            } catch (e) {
+              this._restoreRaw(snap);
+              this.rebuildColumns();
+              this.message = "刪除失敗：" + String(e.message || e);
+            } finally {
+              this._apiBypassBusy = false;
+              this.actionBusy = false;
+              this.rebuildColumns();
+            }
           },
           async confirmDelete() {
             const item = this.dialogs.delete.item;
@@ -2228,6 +2406,10 @@
             if (kind === "update") {
               this.dialogs.update = { open: false, item: null, error: "", urlHint: "" };
               if (this.forms.update) this.forms.update.immediate_publish = false;
+              return;
+            }
+            if (kind === "deletePublished") {
+              this.dialogs.deletePublished = { open: false, item: null, error: "" };
               return;
             }
             this.dialogs[kind] = { open: false, item: null, error: "" };

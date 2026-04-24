@@ -1518,3 +1518,24 @@
 
 下一步:
 - 提交并推送本次 3 个目标文件（`server.py` + 两个 legacy 文件）到 `public/main`，同事侧执行 `git pull` 后即可直接加载插件。
+
+日期时间(HKT): 2026-04-24
+负责人/LLM: wangz / Auto
+分支/worktree: feature/bot-ui-ops（本仓库）| demo仓库:AiroGriefwind/fb-website-demo/main（与本条记录同一提交推送）
+完成内容:
+- [本仓库] 已排程贴文选择「即出」：后端 `update_scheduled()` 在 `immediate_publish` 为真时改为 **`fb_delete`（取消排程）→ `_sync_live()` → `publish_from_pending(..., immediate_publish=True)`**，与「先回到已出未排再即出」同一套已验证链路对齐，避免依赖 `fb_update` 即出导致 FB/站点侧常看不到贴文的问题。
+- [本仓库] `src/dashboard_api/schemas.py`：`UpdateRequest` 增加可选 **`item_id`**，即出时用于在 pending 中定位条目（缺省回退 `post_id` 字符串）。
+- [本仓库] `frontend/board/index.html`：Live **`confirmUpdate`** 即出路径增加乐观插入「已發佈」、提前 `actionBusy`；**`fetchColumns`** 在 `actionBusy` 且已有 `raw` 时跳过无 `include` 的全量替换，减轻与首屏全量请求的竞态导致 UI 闪回「已出未排」；即出成功后局部刷新 **`published` + `scheduled` + 对应 `pending`**；若即出遇时段冲突 **409**，二次确认改为 **`POST /api/actions/publish`**（`allow_shift: true`），避免已对 CMS 执行 delete 后再发第二次 `update`。
+- [本仓库] 同批前端：已發佈卡片支持删除确认弹窗，Live 调用 **`POST /api/actions/delete`**（`fb_delete`，需 `post_id` + `post_link_id`）；Mock 自内存移除。
+
+验证结果:
+- `python -m py_compile src/dashboard_api/services.py src/dashboard_api/schemas.py` 通过。
+- `python -m pytest tests/test_scheduler_plugin.py -q --tb=short`：`6 passed`。
+- 本次提交**未纳入** `data/samples/dashboard_schedule_method_state.json` 的本地运行态 `pid`/`plink` 映射改动，避免将联调机状态写入 demo 树。
+
+风险/阻塞:
+- 即出路径若在 `fb_delete` 已成功但后续 `publish_from_pending` 失败，贴文可能已落在 pending；用户可在已出未排重试即出；409 顺延已走 `publish` 二次应用。
+- 若排程行既无稳定 `item_id` 又无可用 `post_id`，即出会在前端提示无法继续，依赖 CMS 同步字段完整。
+
+下一步:
+- 在真实 CMS 凭证下对「已排程 → 即出」与 409 顺延各做一次端到端回归；按需将 `origin` 主线与本 demo 分支对齐或 cherry-pick。

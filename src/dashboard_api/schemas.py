@@ -23,6 +23,10 @@ class UpdateRequest(BaseModel):
     post_link_type: str = "link"
     image_url: str = ""
     post_mp4_url: str = ""
+    item_id: str = Field(
+        default="",
+        description="已排程即出：取消排程后按 pending 的 item_id 走 publish；缺省则用 post_id 字符串",
+    )
     enforce_time_validation: bool = True
     target_action_key: str = ""
     window_minutes: int = 10

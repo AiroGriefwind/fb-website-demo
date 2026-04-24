@@ -15,7 +15,7 @@ from src.dashboard.config import (
     SCHEDULED_FILE,
 )
 from src.dashboard.data_utils import read_json_list, write_json_list
-from src.dashboard.media_utils import parse_publish_time, round_up_to_window, to_utc_iso_z
+from src.dashboard.media_utils import parse_publish_time, to_utc_iso_z
 from src.dashboard_api.cms_client import CmsActionClient
 from src.scheduler_plugin.calendar_engine import get_schedule_for_date
 
@@ -119,13 +119,10 @@ def _early_publish_guard_slots(default_session: dict[str, Any]) -> int:
 
 
 def _next_immediate_publish_dt(now_hkt: datetime, window_minutes: int) -> datetime:
-    """即出：取当前时刻之后、对齐排程窗口的最早一格（与 slot 规划一致）。"""
-    step = int(window_minutes) if int(window_minutes) > 0 else 10
-    now_floor = now_hkt.replace(second=0, microsecond=0)
-    slot = round_up_to_window(now_floor, step)
-    if slot <= now_floor:
-        slot = slot + timedelta(minutes=step)
-    return slot.replace(second=0, microsecond=0)
+    """即出：按“当前时间 + 1 分钟”发布，避免落入已过去时间。"""
+    _ = window_minutes
+    base = now_hkt.astimezone(HKT_TZ).replace(second=0, microsecond=0)
+    return (base + timedelta(minutes=1)).replace(second=0, microsecond=0)
 
 
 def _validate_update_time_and_window(
@@ -320,6 +317,98 @@ def _sync_live() -> dict[str, Any]:
     return _refresh_live_sample_files(_read_default_session_settings())
 
 
+def _extract_data_list(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, dict):
+        data = payload.get("data")
+        if isinstance(data, list):
+            return [x for x in data if isinstance(x, dict)]
+    return []
+
+
+def _parse_hkt_like_time(value: str) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            return datetime.strptime(raw, fmt).replace(tzinfo=HKT_TZ, second=0, microsecond=0)
+        except ValueError:
+            continue
+    parsed = parse_publish_time(raw)
+    if parsed:
+        return parsed.replace(second=0, microsecond=0)
+    return None
+
+
+def _parse_utc_naive_time_as_hkt(value: str) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            utc_dt = datetime.strptime(raw, fmt).replace(tzinfo=timezone.utc, second=0, microsecond=0)
+            return utc_dt.astimezone(HKT_TZ).replace(second=0, microsecond=0)
+        except ValueError:
+            continue
+    return None
+
+
+def _verify_immediate_by_posts(
+    *,
+    client: CmsActionClient,
+    category: str,
+    post_id: int,
+    expected_hkt: datetime,
+    target_fan_page_id: str,
+) -> dict[str, Any]:
+    verify_payload = {
+        "action": "posts",
+        "category": str(category or "").strip(),
+        "search": "",
+        "limit": 100,
+    }
+    posts_result = client.run_action("posts", verify_payload)
+    posts_rows = _extract_data_list(posts_result.get("response_json"))
+    expected_slot = expected_hkt.astimezone(HKT_TZ).replace(second=0, microsecond=0)
+    target_fan = str(target_fan_page_id or "").strip()
+    for row in posts_rows:
+        row_post_id = _safe_int(row.get("post_id", 0))
+        if row_post_id != int(post_id):
+            continue
+        fan_pages = row.get("fan_pages", [])
+        if not isinstance(fan_pages, list):
+            continue
+        for fan in fan_pages:
+            if not isinstance(fan, dict):
+                continue
+            fan_id = str(fan.get("id", "")).strip()
+            if target_fan and fan_id != target_fan:
+                continue
+            fan_time = _parse_hkt_like_time(str(fan.get("post_link_time", "")))
+            fan_time_alt = _parse_utc_naive_time_as_hkt(str(fan.get("post_link_time", "")))
+            candidates = [x for x in (fan_time, fan_time_alt) if x is not None]
+            if not candidates:
+                continue
+            best_delta = min(abs(int((c - expected_slot).total_seconds() // 60)) for c in candidates)
+            if best_delta <= 8:
+                chosen = min(candidates, key=lambda c: abs((c - expected_slot).total_seconds()))
+                return {
+                    "verified": True,
+                    "fan_page_id": fan_id,
+                    "post_link_time_hkt": chosen.strftime("%Y-%m-%d %H:%M"),
+                    "post_link_id": str(fan.get("post_link_id", "")).strip(),
+                    "post_link_type": str(fan.get("post_link_type", "")).strip(),
+                    "time_delta_min": best_delta,
+                }
+    return {
+        "verified": False,
+        "reason": "posts fan_pages did not match target fan_page_id/time",
+        "expected_time_hkt": expected_slot.strftime("%Y-%m-%d %H:%M"),
+        "target_fan_page_id": target_fan,
+        "posts_status_code": int(posts_result.get("status_code", 0) or 0),
+    }
+
+
 def sync_live_board_samples() -> dict[str, Any]:
     """Public entry for scheduler / tools: refresh fb_* sample JSON via CMS."""
     return _sync_live()
@@ -488,7 +577,8 @@ def publish_from_pending(
     if not target:
         return {"ok": False, "message": "pending item not found"}
 
-    now_hkt = datetime.now(HKT_TZ).replace(second=0, microsecond=0)
+    now_hkt = datetime.now(HKT_TZ)
+    now_floor = now_hkt.replace(second=0, microsecond=0)
     if immediate_publish:
         schedule_dt = _next_immediate_publish_dt(now_hkt, window_minutes)
     else:
@@ -496,7 +586,7 @@ def publish_from_pending(
             schedule_dt = datetime.strptime(schedule_time.strip(), "%Y-%m-%dT%H:%M").replace(tzinfo=HKT_TZ)
         except ValueError:
             return {"ok": False, "message": "invalid schedule_time format, expected YYYY-MM-DDTHH:mm"}
-        if schedule_dt <= now_hkt:
+        if schedule_dt <= now_floor:
             return {"ok": False, "message": "cannot schedule in the past"}
 
     msg = str(post_message or "").strip()
@@ -555,6 +645,17 @@ def publish_from_pending(
     )
     if not bool(publish_result.get("ok")):
         return {"ok": False, "message": str(publish_result.get("message", "publish failed"))}
+    immediate_verify: dict[str, Any] | None = None
+    if immediate_publish:
+        default_session = _read_default_session_settings()
+        target_fan_page_id = str(default_session.get("cfg_target_fan_page_id", "350584865140118")).strip() or "350584865140118"
+        immediate_verify = _verify_immediate_by_posts(
+            client=client,
+            category=str(target.get("category", "")),
+            post_id=int(target.get("post_id", 0)),
+            expected_hkt=schedule_dt,
+            target_fan_page_id=target_fan_page_id,
+        )
     method_state = _load_schedule_method_state()
     target_post_id = _safe_int(target.get("post_id", 0))
     key = _method_state_key(post_id=target_post_id)
@@ -562,21 +663,67 @@ def publish_from_pending(
         method_state[key] = str(schedule_method or "manual_user")
         _save_schedule_method_state(method_state)
     sync_result = _sync_live()
-    return {"ok": True, "message": "publish ok", "impact_report": impact, "sync_result": sync_result}
+    return {
+        "ok": True,
+        "message": "publish ok",
+        "impact_report": impact,
+        "sync_result": sync_result,
+        "immediate_verify": immediate_verify,
+    }
 
 
 def update_scheduled(payload: dict[str, Any]) -> dict[str, Any]:
     immediate = bool(payload.get("immediate_publish", False))
     window_minutes = int(payload.get("window_minutes", 10) or 10)
-    now_hkt = datetime.now(HKT_TZ).replace(second=0, microsecond=0)
     if immediate:
-        picked_dt = _next_immediate_publish_dt(now_hkt, window_minutes)
-    else:
-        picked_time = str(payload.get("post_link_time", "")).strip()
-        try:
-            picked_dt = datetime.strptime(picked_time, "%Y-%m-%dT%H:%M").replace(tzinfo=HKT_TZ)
-        except ValueError:
-            return {"ok": False, "message": "invalid time format, expected YYYY-MM-DDTHH:mm (HKT)"}
+        item_id = str(payload.get("item_id", "") or "").strip()
+        if not item_id:
+            item_id = str(_safe_int(payload.get("post_id", 0)) or "").strip()
+        if not item_id:
+            return {"ok": False, "message": "immediate_publish requires item_id (or post_id) on the card"}
+        post_id = int(payload.get("post_id", 0))
+        post_link_id = str(payload.get("post_link_id", "")).strip()
+        if post_id <= 0 or not post_link_id:
+            return {"ok": False, "message": "missing post_id/post_link_id for cancel-schedule step"}
+        client = CmsActionClient()
+        del_result = client.run_action("fb_delete", {"post_id": post_id, "post_link_id": post_link_id})
+        if not bool(del_result.get("ok")):
+            return {"ok": False, "message": f"cancel schedule failed: {del_result.get('message', 'fb_delete')}"}
+        _sync_live()
+        pub = publish_from_pending(
+            item_id=item_id,
+            schedule_time=str(payload.get("post_link_time", "") or "").strip(),
+            window_minutes=window_minutes,
+            post_message=str(payload.get("post_message", "") or ""),
+            post_link_type=str(payload.get("post_link_type", "link") or "link"),
+            image_url=str(payload.get("image_url", "") or ""),
+            immediate_publish=True,
+            allow_shift=bool(payload.get("allow_shift", False)),
+            schedule_method=str(payload.get("schedule_method", "manual_user") or "manual_user"),
+        )
+        if not bool(pub.get("ok")):
+            if bool(pub.get("requires_confirmation")):
+                return {
+                    "ok": False,
+                    "requires_confirmation": True,
+                    "message": str(pub.get("message", "slot occupied, confirmation required")),
+                    **{k: v for k, v in pub.items() if k not in ("ok", "message")},
+                }
+            return pub
+        return {
+            "ok": True,
+            "message": "immediate ok (cancel schedule then publish)",
+            "impact_report": pub.get("impact_report", {}),
+            "sync_result": pub.get("sync_result"),
+            "immediate_verify": pub.get("immediate_verify"),
+            "delete_then_publish": True,
+        }
+
+    picked_time = str(payload.get("post_link_time", "")).strip()
+    try:
+        picked_dt = datetime.strptime(picked_time, "%Y-%m-%dT%H:%M").replace(tzinfo=HKT_TZ)
+    except ValueError:
+        return {"ok": False, "message": "invalid time format, expected YYYY-MM-DDTHH:mm (HKT)"}
 
     scheduled_rows = read_json_list(SCHEDULED_FILE)
     target_action_key = str(payload.get("target_action_key", "")).strip()
@@ -655,7 +802,13 @@ def update_scheduled(payload: dict[str, Any]) -> dict[str, Any]:
     elif key_pid:
         method_state[key_pid] = method
     _save_schedule_method_state(method_state)
-    return {"ok": True, "message": "update ok", "impact_report": impact, "sync_result": _sync_live()}
+    return {
+        "ok": True,
+        "message": "update ok",
+        "impact_report": impact,
+        "sync_result": _sync_live(),
+        "immediate_verify": None,
+    }
 
 
 def delete_scheduled(post_id: int, post_link_id: str) -> dict[str, Any]:
