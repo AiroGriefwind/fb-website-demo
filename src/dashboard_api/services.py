@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -295,6 +296,35 @@ def _read_default_session_settings() -> dict[str, Any]:
         return default if isinstance(default, dict) else {}
     except Exception:
         return {}
+
+
+def _read_fake_link_settings(default_session: dict[str, Any] | None = None) -> tuple[bool, str]:
+    session = default_session if isinstance(default_session, dict) else _read_default_session_settings()
+    enabled = bool(
+        session.get(
+            "cfg_use_fake_link",
+            session.get("use_fake_link", False),
+        )
+    )
+    fake_url = str(
+        session.get(
+            "cfg_fake_link_url",
+            session.get("fake_link_url", "https://abc.xyz/test-link"),
+        )
+        or ""
+    ).strip()
+    if not fake_url:
+        fake_url = "https://abc.xyz/test-link"
+    return enabled, fake_url
+
+
+def _apply_fake_link_to_message(message: str, fake_url: str) -> str:
+    text = str(message or "").strip()
+    # Replace any existing URL with the fake link. If no URL exists, append one line.
+    replaced = re.sub(r"https?://[^\s]+", fake_url, text)
+    if replaced != text:
+        return replaced
+    return (text + "\n" + fake_url).strip() if text else fake_url
 
 
 def _refresh_live_sample_files(default_session: dict[str, Any]) -> dict[str, Any]:
@@ -592,7 +622,14 @@ def publish_from_pending(
     msg = str(post_message or "").strip()
     if not msg:
         msg = str(target.get("post_message", "")).strip() or str(target.get("title", "")).strip()
+    fake_link_enabled, fake_link_url = _read_fake_link_settings()
+    if fake_link_enabled:
+        msg = _apply_fake_link_to_message(msg, fake_link_url)
     ptype = str(post_link_type or "").strip().lower() or str(target.get("post_link_type", "link")).strip() or "link"
+    # Fake-link mode should never publish a real link attachment.
+    # If post type remains "link", upstream may still attach the original article URL.
+    if fake_link_enabled and ptype == "link":
+        ptype = "text"
     img = str(image_url or "").strip() or str(target.get("image_url", "")).strip()
     if ptype == "photo" and not img:
         return {"ok": False, "message": "photo 类型需要图片 URL"}
@@ -638,6 +675,7 @@ def publish_from_pending(
             "post_message": msg,
             "post_link_time": to_utc_iso_z(schedule_dt),
             "post_link_type": ptype,
+            "post_link": fake_link_url if fake_link_enabled else None,
             "image_url": img or None,
             "post_mp4_url": str(target.get("post_mp4_url", "")).strip() or None,
             "post_timezone": "UTC",
@@ -764,6 +802,7 @@ def update_scheduled(payload: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "message": plan_message}
 
     client = CmsActionClient()
+    fake_link_enabled, fake_link_url = _read_fake_link_settings()
     for row in pre_updates:
         update_result = client.run_action(
             "fb_update",
@@ -783,9 +822,16 @@ def update_scheduled(payload: dict[str, Any]) -> dict[str, Any]:
     action_payload = {
         "post_id": int(payload.get("post_id", 0)),
         "post_link_id": str(payload.get("post_link_id", "")).strip(),
-        "post_message": str(payload.get("post_message", "")).strip(),
+        "post_message": _apply_fake_link_to_message(str(payload.get("post_message", "")).strip(), fake_link_url)
+        if fake_link_enabled
+        else str(payload.get("post_message", "")).strip(),
         "post_link_time": to_utc_iso_z(picked_dt),
-        "post_link_type": str(payload.get("post_link_type", "link")).strip() or "link",
+        "post_link_type": (
+            "text"
+            if fake_link_enabled and (str(payload.get("post_link_type", "link")).strip() or "link") == "link"
+            else (str(payload.get("post_link_type", "link")).strip() or "link")
+        ),
+        "post_link": fake_link_url if fake_link_enabled else None,
         "image_url": str(payload.get("image_url", "")).strip() or None,
         "post_mp4_url": str(payload.get("post_mp4_url", "")).strip() or None,
         "post_timezone": "UTC",
@@ -817,6 +863,53 @@ def delete_scheduled(post_id: int, post_link_id: str) -> dict[str, Any]:
     if not bool(result.get("ok")):
         return {"ok": False, "message": str(result.get("message", "delete failed"))}
     return {"ok": True, "message": "delete ok", "sync_result": _sync_live()}
+
+
+def delete_all_published() -> dict[str, Any]:
+    # Always sync first to make sure we delete the latest published rows from CMS.
+    sync_before = _sync_live()
+    published_rows = read_json_list(PUBLISHED_FILE)
+    pairs: list[tuple[int, str]] = []
+    seen: set[str] = set()
+    for row in published_rows:
+        post_id = _safe_int(row.get("post_id", 0))
+        post_link_id = str(row.get("post_link_id", "")).strip()
+        if post_id <= 0 or not post_link_id:
+            continue
+        dedup_key = f"{post_id}:{post_link_id}"
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+        pairs.append((post_id, post_link_id))
+
+    client = CmsActionClient()
+    failed: list[dict[str, Any]] = []
+    success_count = 0
+    for post_id, post_link_id in pairs:
+        result = client.run_action("fb_delete", {"post_id": int(post_id), "post_link_id": post_link_id})
+        if bool(result.get("ok")):
+            success_count += 1
+        else:
+            failed.append(
+                {
+                    "post_id": int(post_id),
+                    "post_link_id": post_link_id,
+                    "message": str(result.get("message", "delete failed")),
+                    "status_code": int(result.get("status_code", 0) or 0),
+                }
+            )
+
+    sync_after = _sync_live()
+    return {
+        "ok": len(failed) == 0,
+        "message": "all published deleted" if not failed else f"partial failure: {len(failed)}",
+        "total": len(pairs),
+        "deleted": success_count,
+        "failed_count": len(failed),
+        "failed_items": failed,
+        "sync_before": sync_before,
+        "sync_after": sync_after,
+    }
 
 
 def toggle_lock(action_key: str) -> dict[str, Any]:

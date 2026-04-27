@@ -1539,3 +1539,23 @@
 
 下一步:
 - 在真实 CMS 凭证下对「已排程 → 即出」与 409 顺延各做一次端到端回归；按需将 `origin` 主线与本 demo 分支对齐或 cherry-pick。
+
+日期时间(HKT): 2026-04-27 15:53
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库）| demo仓库:AiroGriefwind/fb-website-demo/main（本条记录对应同批推送）
+完成内容:
+- [本仓库] 独立看板设置区新增「一键删除全部已发佈」按钮（仅 Live 可用）：前端 `frontend/board/index.html` 新增确认交互并调用 `POST /api/actions/delete-published-all`，后端 `src/dashboard_api/server.py` 新增路由，`src/dashboard_api/services.py` 新增 `delete_all_published()`，按当前 `published` 列逐条执行 `fb_delete` 并返回成功/失败统计。
+- [本仓库] 新增「使用假链接」设置：`GET/PUT /api/sidebar/settings` 扩展 `use_fake_link` 与 `fake_link_url`（默认 `https://abc.xyz/test-link`），前端设置区新增 toggle + URL 输入框，并在排程/修改弹窗显示“已启用假链接”提示。
+- [本仓库] 假链接链路闭环：`Add URL` 改为读取假链接；`confirmSchedule/confirmUpdate` 提交前会将正文中的 URL 替换为假链接（若无 URL 则追加一行）；后端 `publish_from_pending/update_scheduled` 增加兜底二次替换，避免前端漏网。
+- [本仓库] 修复“正文已是假链接但返回仍含 staging 真链接”的问题：在 fake-link 模式下，后端将 `post_link_type=link` 强制降为 `text`，并传入 `post_link=fake_link_url`，避免 CMS/FB 挂上原始真实链接附件。
+
+验证结果:
+- `python -m py_compile src/dashboard_api/server.py src/dashboard_api/services.py` 通过。
+- 前端手测：设置中开启假链接后，排程/修改弹窗与 Add URL 展示并注入假链接；新增一键删除按钮可触发批量删除流程并回显统计。
+
+风险/阻塞:
+- 若协作者本地 `sync_live_data_to_sample_files` 因凭证/网络失败，UI 可能继续显示本地旧样本 `published` 数据；需结合 API 日志确认是否真的完成 live 同步。
+- fake-link 模式将 link 贴文降为 text 以彻底规避真实链接外带，若后续业务要求保留 link 卡片样式，需后端额外支持“显式覆盖 post_link”且禁用原始 link 回填。
+
+下一步:
+- 推送本次改动到 demo 仓库并让协作者 `git pull` + 重启 `python -m src.dashboard_api.run` 后复测「一键删除全部已发佈」与「假链接模式不外带真实 link」两条链路。

@@ -41,6 +41,7 @@ from src.dashboard_api.schemas import (
 )
 from src.dashboard_api.services import (
     apply_scheduler_batch,
+    delete_all_published,
     delete_scheduled,
     load_board_columns,
     publish_from_pending,
@@ -417,6 +418,9 @@ def get_sidebar_settings() -> dict[str, Any]:
         "early_publish_guard_slots": _eg,
         "enable_category_alias_mode": bool(current.get("cfg_enable_category_alias_mode", False)),
         "enable_board_fallback_mode": bool(current.get("cfg_enable_board_fallback_mode", False)),
+        "use_fake_link": bool(current.get("cfg_use_fake_link", current.get("use_fake_link", False))),
+        "fake_link_url": str(current.get("cfg_fake_link_url", current.get("fake_link_url", "https://abc.xyz/test-link"))).strip()
+        or "https://abc.xyz/test-link",
         "target_fan_page_id": str(current.get("cfg_target_fan_page_id", "350584865140118")).strip() or "350584865140118",
         "updated_at": str(current.get("updated_at", "")),
     }
@@ -438,6 +442,12 @@ def put_sidebar_settings(payload: dict[str, Any]) -> dict[str, Any]:
         "early_publish_guard_slots": _eg_put,
         "cfg_enable_category_alias_mode": bool(payload.get("enable_category_alias_mode", False)),
         "cfg_enable_board_fallback_mode": bool(payload.get("enable_board_fallback_mode", False)),
+        "cfg_use_fake_link": bool(payload.get("use_fake_link", False)),
+        "use_fake_link": bool(payload.get("use_fake_link", False)),
+        "cfg_fake_link_url": str(payload.get("fake_link_url", "https://abc.xyz/test-link")).strip()
+        or "https://abc.xyz/test-link",
+        "fake_link_url": str(payload.get("fake_link_url", "https://abc.xyz/test-link")).strip()
+        or "https://abc.xyz/test-link",
         "cfg_target_fan_page_id": str(payload.get("target_fan_page_id", "350584865140118")).strip() or "350584865140118",
         "updated_at": datetime.now(HKT_TZ).isoformat(),
     }
@@ -496,6 +506,14 @@ def action_delete(payload: DeleteRequest) -> dict:
     result = delete_scheduled(post_id=payload.post_id, post_link_id=payload.post_link_id)
     if not bool(result.get("ok")):
         raise HTTPException(status_code=400, detail=str(result.get("message", "delete failed")))
+    return result
+
+
+@app.post("/api/actions/delete-published-all")
+def action_delete_published_all() -> dict:
+    result = delete_all_published()
+    if not bool(result.get("ok")) and int(result.get("deleted", 0) or 0) == 0:
+        raise HTTPException(status_code=400, detail=str(result.get("message", "bulk delete published failed")))
     return result
 
 

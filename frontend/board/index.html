@@ -850,9 +850,22 @@
               </select>
               <label class="tiny"><input type="checkbox" x-model="settings.enable_category_alias_mode" /> 启用分类归一化</label>
               <label class="tiny" style="display:block; margin-top:6px;"><input type="checkbox" x-model="settings.enable_board_fallback_mode" /> 启用看板渲染兜底</label>
+              <label class="tiny" style="display:block; margin-top:6px;"><input type="checkbox" x-model="settings.use_fake_link" /> 使用假链接（发布/修改 + Add URL）</label>
+              <label class="tiny" style="display:block; margin-top:8px;">假链接 URL</label>
+              <input class="field" type="text" x-model="settings.fake_link_url" placeholder="https://abc.xyz/test-link" />
               <label class="tiny" style="display:block; margin-top:8px;">测试 Fan Page ID</label>
               <input class="field" type="text" x-model="settings.target_fan_page_id" />
               <button class="btn primary" @click="saveSettings()" :disabled="loading || actionBusy">保存设置</button>
+              <button
+                type="button"
+                class="btn tiny danger"
+                style="margin-top: 8px; width: 100%;"
+                @click="deleteAllPublishedPosts()"
+                :disabled="loading || actionBusy || mode !== 'live'"
+                title="逐条调用 fb_delete，删除当前所有已发布贴文（仅 Live 模式可用）"
+              >
+                一键删除全部已发布
+              </button>
               <button
                 type="button"
                 class="btn tiny"
@@ -1453,6 +1466,8 @@
             early_publish_guard_slots: "2",
             enable_category_alias_mode: false,
             enable_board_fallback_mode: false,
+            use_fake_link: false,
+            fake_link_url: "https://abc.xyz/test-link",
             target_fan_page_id: "350584865140118",
           },
           dialogs: {
@@ -1763,6 +1778,20 @@
           pendingArticleUrl(item) {
             return String(item?.["Post URL"] || item?.post_link || "").trim();
           },
+          effectiveArticleUrl(item) {
+            if (this.settings?.use_fake_link) {
+              return String(this.settings?.fake_link_url || "https://abc.xyz/test-link").trim() || "https://abc.xyz/test-link";
+            }
+            return this.pendingArticleUrl(item);
+          },
+          applyFakeLinkToMessage(message) {
+            const fake = String(this.settings?.fake_link_url || "https://abc.xyz/test-link").trim() || "https://abc.xyz/test-link";
+            const raw = String(message ?? "").trim();
+            if (!this.settings?.use_fake_link) return raw;
+            const replaced = raw.replace(/https?:\/\/[^\s]+/g, fake);
+            if (replaced !== raw) return replaced;
+            return raw ? (raw + "\n" + fake) : fake;
+          },
           pendingFeatureImageUrl(item) {
             return String(item?.image_url || item?.thumbnail || "").trim();
           },
@@ -1814,7 +1843,7 @@
           appendSchedulePostLink() {
             if (this.forms.schedule.post_link_type === "link") return;
             const item = this.dialogs.schedule.item;
-            const url = item ? this.pendingArticleUrl(item) : "";
+            const url = item ? this.effectiveArticleUrl(item) : "";
             if (!url) {
               this.dialogs.schedule.urlHint = "该贴文没有可用的网站 URL（post_link / Post URL）。";
               return;
@@ -1874,7 +1903,7 @@
           appendUpdatePostLink() {
             if (this.forms.update.post_link_type === "link") return;
             const item = this.dialogs.update.item;
-            const url = item ? this.pendingArticleUrl(item) : "";
+            const url = item ? this.effectiveArticleUrl(item) : "";
             if (!url) {
               this.dialogs.update.urlHint = "该贴文没有可用的网站 URL（Post URL / permalink）。";
               return;
@@ -1909,14 +1938,17 @@
               image_url: defImg,
               immediate_publish: false,
             };
-            this.dialogs.schedule = { open: true, item: item, error: "", urlHint: "" };
+            const fakeHint = this.settings?.use_fake_link
+              ? ("已启用假链接，将使用：" + (String(this.settings?.fake_link_url || "https://abc.xyz/test-link").trim() || "https://abc.xyz/test-link"))
+              : "";
+            this.dialogs.schedule = { open: true, item: item, error: "", urlHint: fakeHint };
             this._clampScheduleFormDate();
           },
           async confirmSchedule() {
             const item = this.dialogs.schedule.item;
             if (!item) return;
             this.dialogs.schedule.error = "";
-            const pickedMsg = String(this.forms.schedule.post_message || "").trim();
+            const pickedMsg = this.applyFakeLinkToMessage(this.forms.schedule.post_message || "");
             const pickedType = String(this.forms.schedule.post_link_type || "link").toLowerCase();
             const pickedImage = String(this.forms.schedule.image_url || "").trim();
             const immediate = Boolean(this.forms.schedule.immediate_publish);
@@ -2078,7 +2110,10 @@
               image_url: defImg,
               immediate_publish: false,
             };
-            this.dialogs.update = { open: true, item: item, error: "", urlHint: "" };
+            const fakeHint = this.settings?.use_fake_link
+              ? ("已启用假链接，将使用：" + (String(this.settings?.fake_link_url || "https://abc.xyz/test-link").trim() || "https://abc.xyz/test-link"))
+              : "";
+            this.dialogs.update = { open: true, item: item, error: "", urlHint: fakeHint };
             this._clampUpdateFormDate();
           },
           async confirmUpdate() {
@@ -2086,7 +2121,7 @@
             if (!item) return;
             this.dialogs.update.error = "";
             const pickedType = String(this.forms.update.post_link_type || "link").toLowerCase();
-            const pickedMsg = String(this.forms.update.post_message || "").trim();
+            const pickedMsg = this.applyFakeLinkToMessage(this.forms.update.post_message || "");
             const pickedImage = String(this.forms.update.image_url || "").trim();
             const immediate = Boolean(this.forms.update.immediate_publish);
             let when = "";
@@ -2335,6 +2370,40 @@
               this._restoreRaw(snap);
               this.rebuildColumns();
               this.message = "刪除失敗：" + String(e.message || e);
+            } finally {
+              this._apiBypassBusy = false;
+              this.actionBusy = false;
+              this.rebuildColumns();
+            }
+          },
+          async deleteAllPublishedPosts() {
+            if (this.mode !== "live") {
+              this.message = "请切换到 Live 模式后再执行批量删除";
+              return;
+            }
+            if (this.actionBusy) {
+              this.message = "当前有贴文操作进行中，请稍候";
+              return;
+            }
+            const confirmed = window.confirm("确认逐条删除当前所有已发布贴文？该操作不可撤销。");
+            if (!confirmed) return;
+            this.actionBusy = true;
+            this._apiBypassBusy = true;
+            this.message = "正在批量删除已发布贴文，请稍候…";
+            try {
+              const res = await this.callAction("/api/actions/delete-published-all", {}, { internal: true });
+              await this.fetchColumns("published", {
+                skipBoardLoading: true,
+                skipDefaultMessage: true,
+                rethrow: true,
+                skipSync: true,
+              });
+              const total = Number(res?.total || 0);
+              const deleted = Number(res?.deleted || 0);
+              const failed = Number(res?.failed_count || 0);
+              this.message = `批量删除完成：成功 ${deleted}/${total}，失败 ${failed}`;
+            } catch (e) {
+              this.message = "批量删除失败：" + String(e.message || e);
             } finally {
               this._apiBypassBusy = false;
               this.actionBusy = false;
