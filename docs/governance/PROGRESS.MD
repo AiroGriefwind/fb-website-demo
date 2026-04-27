@@ -1559,3 +1559,22 @@
 
 下一步:
 - 推送本次改动到 demo 仓库并让协作者 `git pull` + 重启 `python -m src.dashboard_api.run` 后复测「一键删除全部已发佈」与「假链接模式不外带真实 link」两条链路。
+
+日期时间(HKT): 2026-04-27 16:28
+负责人/LLM: wangz / gpt-5.3-codex
+分支/worktree: feature/bot-ui-ops（本仓库）| demo仓库:AiroGriefwind/fb-website-demo/main（本条记录对应同批推送）
+完成内容:
+- [本仓库] 修复「已出未排/已排程进入已發佈后缩略图变 Dummy」的长期问题：`src/dashboard/live_api_sync.py` 的 `_to_published_rows()` 新增与其他列一致的图片回填链路，优先顺序为 **fb payload（full_picture/image_url）→ CMS 映射（thumb_by_cms_id）→ pending by post_id → pending by title**，仅在上述均缺失时才会在前端最终落到 Dummy。
+- [本仓库] 对齐 published 构建阶段数据注入：在 `sync_live_data_to_sample_files()` 中先构建 `pending_thumb_by_post_id/pending_thumb_by_title`，并传入 `_to_published_rows()`，确保已發佈列可复用同轮同步中 pending 的有效图片。
+- [本仓库] 优化锁定按钮可见性（mac 端反馈）：`frontend/board/index.html` 为 `🔒/🔓` 按钮增加锁定态高亮样式，`is_locked=true` 时按钮底色切为蓝色（按下态），再次点击恢复默认底色，降低仅靠 emoji 切换不明显的问题。
+
+验证结果:
+- `python -m py_compile src/dashboard/live_api_sync.py` 通过。
+- `read_lints` 检查 `src/dashboard/live_api_sync.py` 无新增问题；`frontend/board/index.html` 仅保留既有 `line-clamp` 兼容 warning（非本次新增）。
+
+风险/阻塞:
+- 若 CMS 上游在已發佈与 posts 两侧同时缺失可用图片字段，最终仍会回退到 Dummy（属于兜底路径，非回归）。
+- 锁定按钮高亮为纯前端样式增强，不影响原有锁定业务语义；若后续主题系统改色，需同步调整锁定态蓝色 token。
+
+下一步:
+- 推送本次修复到 demo 仓库并让协作者在 mac 端复测两条链路：①已發佈缩略图不再无故掉 Dummy；②锁定按钮蓝底高亮在深浅主题下均可清晰辨识。

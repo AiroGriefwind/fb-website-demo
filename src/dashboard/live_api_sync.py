@@ -461,11 +461,17 @@ def _to_published_rows(
     enable_alias_mode: bool,
     cms_id_by_post_link_id: dict[str, int] | None = None,
     cms_id_by_post_link: dict[str, int] | None = None,
+    thumb_by_cms_id: dict[int, str] | None = None,
+    pending_thumb_by_post_id: dict[int, str] | None = None,
+    pending_thumb_by_title: dict[str, str] | None = None,
     category_by_cms_id: dict[int, str] | None = None,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     cms_id_by_post_link_id = cms_id_by_post_link_id or {}
     cms_id_by_post_link = cms_id_by_post_link or {}
+    thumb_by_cms_id = thumb_by_cms_id or {}
+    pending_thumb_by_post_id = pending_thumb_by_post_id or {}
+    pending_thumb_by_title = pending_thumb_by_title or {}
     category_by_cms_id = category_by_cms_id or {}
     for item in items:
         insights = item.get("insights", {}) if isinstance(item.get("insights", {}), dict) else {}
@@ -486,11 +492,23 @@ def _to_published_rows(
         category = _normalize_category(str(item.get("category", "未分類")), enable_alias_mode)
         if category == "未分類" and cms_post_id > 0:
             category = str(category_by_cms_id.get(cms_post_id, category)).strip() or category
+        # Keep image recovery chain consistent with scheduled/pending columns:
+        # 1) fb payload full_picture/image_url
+        # 2) cms reference map by cms_id
+        # 3) pending-derived map by cms post_id
+        # 4) pending-derived map by title
+        current_thumb = str(item.get("full_picture", "")).strip() or str(item.get("image_url", "")).strip()
+        if not current_thumb and cms_post_id > 0:
+            current_thumb = str(thumb_by_cms_id.get(cms_post_id, "")).strip()
+        if not current_thumb and cms_post_id > 0:
+            current_thumb = str(pending_thumb_by_post_id.get(cms_post_id, "")).strip()
+        if not current_thumb:
+            current_thumb = str(pending_thumb_by_title.get(title, "")).strip()
         rows.append(
             {
                 "title": title,
                 "category": category,
-                "thumbnail": str(item.get("full_picture", "")).strip(),
+                "thumbnail": current_thumb,
                 "Post URL": post_link,
                 "publish_time": str(item.get("created_time", "")).strip(),
                 "popular_count": int(insights.get("post_impressions_unique") or 0),
@@ -499,8 +517,7 @@ def _to_published_rows(
                 "post_link_id": post_link_id,
                 "post_link_type": _post_link_type_from_fb_item(item),
                 "post_message": str(item.get("message", "")).strip(),
-                "image_url": str(item.get("image_url", "")).strip()
-                or str(item.get("full_picture", "")).strip(),
+                "image_url": str(item.get("image_url", "")).strip() or current_thumb,
                 "post_mp4_url": str(item.get("post_mp4_url", "")).strip(),
                 "raw_fb_id": str(item.get("id", "")).strip(),
             }
@@ -752,15 +769,18 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
         cms_id_by_post_link_id, cms_id_by_post_link, thumb_by_cms_id, category_by_cms_id = _build_cms_reference_maps(
             posts_items_all
         )
+        pending_thumb_by_post_id, pending_thumb_by_title = _build_pending_thumb_maps(pending_rows_all)
         published_rows = _to_published_rows(
             _extract_data_list(published_payload),
             enable_alias_mode=enable_category_alias_mode,
             cms_id_by_post_link_id=cms_id_by_post_link_id,
             cms_id_by_post_link=cms_id_by_post_link,
+            thumb_by_cms_id=thumb_by_cms_id,
+            pending_thumb_by_post_id=pending_thumb_by_post_id,
+            pending_thumb_by_title=pending_thumb_by_title,
             category_by_cms_id=category_by_cms_id,
         )
         scheduled_thumb_fallback_map = _build_scheduled_thumb_map(pending_rows_all)
-        pending_thumb_by_post_id, pending_thumb_by_title = _build_pending_thumb_maps(pending_rows_all)
         scheduled_rows = _to_scheduled_rows(
             _extract_data_list(scheduled_payload),
             enable_alias_mode=enable_category_alias_mode,
