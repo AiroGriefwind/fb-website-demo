@@ -1578,3 +1578,26 @@
 
 下一步:
 - 推送本次修复到 demo 仓库并让协作者在 mac 端复测两条链路：①已發佈缩略图不再无故掉 Dummy；②锁定按钮蓝底高亮在深浅主题下均可清晰辨识。
+
+日期时间(HKT): 2026-05-04
+负责人/LLM: wangz / Auto
+分支/worktree: feature/bot-ui-ops（本仓库）| demo仓库:AiroGriefwind/fb-website-demo/main（计划与本条一并推送）
+完成内容:
+- [本仓库] 介入 **CMS Production**（`https://cms.bastillepost.com`）联调：`src/dashboard/api_smoke_test_app.py` 支持从 `configs/.env` 读取 `PRODUCTION_API_BASE_URL`、`PRODUCTION_BASIC_AUTH_*`，并与 Staging（`API_BASE_URL` / `BASIC_AUTH_*`）在页面上切换；后续 API 在「Basic + X-Token」模式下按网关要求使用 **`Authorization: Basic …`**（受保护目录）+ **`X-Token`** 传递登录取得的 session token（取代旧版 `Token` 头）。
+- [本仓库] 冒烟测试结论：**成功** — 在 Production 目标下可完成登录并取得 token，作为接入正式 CMS 的前置验证。
+
+验证结果:
+- **API Smoke Test（Streamlit）手测通过**：`streamlit run src/dashboard/api_smoke_test_app.py`，环境选 **Production**，网关 Basic 文案显示已启用（凭据来自 `.env`，不落库）。
+- **本次验证通过的页面选项组合（请固定记录以便复现）**：
+  - **API 環境**：Production
+  - **API Base URL / Endpoint Path（示例）**：`https://cms.bastillepost.com/fb-scheduler` + **`/`**（完整请求 URL：`https://cms.bastillepost.com/fb-scheduler/`）
+  - **Login Body 模式**：JSON
+  - **Login Mode（僅控制登錄）**：網關模式(Basic)
+  - **後續 API Header 組合**：Basic + X-Token
+
+风险/阻塞:
+- 正式凭证与 token 仅存在于本地 `.env`/会话，不得写入仓库或截图明文；新环境需自行配置 `PRODUCTION_*` 与账号密码。
+- 冒烟页仅验证调度 API 链路与鉴权头组合；看板主流程与批量业务仍需在 `dashboard_api`/前端侧另行端到端回归。
+
+下一步:
+- 将本条治理记录与 `api_smoke_test_app.py` 变更提交并推送到 `public`（fb-website-demo）`main`，供 demo 站点侧同步。

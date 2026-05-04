@@ -93,6 +93,11 @@ def _build_basic_auth_value(username: str, password: str) -> str | None:
     return f"Basic {base64.b64encode(raw).decode('ascii')}"
 
 
+def _set_x_token_for_basic_combo(headers: dict[str, str], token: str, *, bearer_prefix: bool) -> None:
+    """網關 Basic + session token：token 走 X-Token（非 Token header）。"""
+    headers["X-Token"] = f"Bearer {token}" if bearer_prefix else token
+
+
 def _extract_basic_from_url(url: str) -> tuple[str, str | None]:
     parsed = parse.urlparse(url.strip())
     if not parsed.scheme or not parsed.netloc:
@@ -140,7 +145,7 @@ def _debug_log(hypothesis_id: str, location: str, message: str, data: dict[str, 
 
 def _header_shape(headers: dict[str, str]) -> dict[str, Any]:
     auth_value = headers.get("Authorization", "")
-    token_header = headers.get("Token", "")
+    token_header = headers.get("X-Token", "") or headers.get("Token", "")
     token_shape = ""
     if token_header:
         token_shape = "bearer_prefixed" if token_header.startswith("Bearer ") else "raw_token"
@@ -149,6 +154,7 @@ def _header_shape(headers: dict[str, str]) -> dict[str, Any]:
         "authorization_prefix": auth_value.split(" ", 1)[0] if auth_value else "",
         "has_proxy_authorization": "Proxy-Authorization" in headers,
         "has_token_header": "Token" in headers,
+        "has_x_token_header": "X-Token" in headers,
         "token_shape": token_shape,
         "has_cookie_header": "Cookie" in headers,
         "has_cookies_header": "Cookies" in headers,
@@ -166,7 +172,7 @@ def _probe_request_shapes_on_401(
     posts_with_search = dict(posts_min)
     posts_with_search["search"] = ""
     bearer_auth = str(headers.get("Authorization", ""))
-    token_header = str(headers.get("Token", "")).strip()
+    token_header = str(headers.get("X-Token", "") or headers.get("Token", "")).strip()
     bearer_token = ""
     if bearer_auth.startswith("Bearer "):
         bearer_token = bearer_auth.replace("Bearer ", "", 1).strip()
@@ -190,9 +196,9 @@ def _probe_request_shapes_on_401(
                 "Cookies": cookie_value,
             }
             if name.endswith("token_bearer_cookies"):
-                req_headers["Token"] = f"Bearer {bearer_token}"
+                req_headers["X-Token"] = f"Bearer {bearer_token}"
             else:
-                req_headers["Token"] = bearer_token
+                req_headers["X-Token"] = bearer_token
             try:
                 req_body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
                 req = request.Request(url, data=req_body, headers=req_headers, method="POST")
@@ -265,7 +271,7 @@ def _probe_request_shapes_on_401(
                 req_headers = {
                     "Content-Type": "application/json",
                     "Authorization": gateway_basic_auth,
-                    "Token": fresh_token,
+                    "X-Token": fresh_token,
                     "Cookies": fresh_cookie,
                 }
                 try:
@@ -312,7 +318,7 @@ def _probe_request_shapes_on_401(
                     req_headers = {
                         "Content-Type": "application/json",
                         "Authorization": gateway_basic_auth,
-                        "Token": fresh_token,
+                        "X-Token": fresh_token,
                         "Cookies": fresh_cookie,
                     }
                     try:
@@ -396,7 +402,7 @@ def _probe_request_shapes_on_401(
                     {
                         "Content-Type": "application/json",
                         "Authorization": gateway_basic_auth,
-                        "Token": fresh_token,
+                        "X-Token": fresh_token,
                         "Cookies": fresh_cookie,
                     },
                 ),
@@ -408,7 +414,7 @@ def _probe_request_shapes_on_401(
                     {
                         "Content-Type": "application/x-www-form-urlencoded",
                         "Authorization": gateway_basic_auth,
-                        "Token": fresh_token,
+                        "X-Token": fresh_token,
                         "Cookies": fresh_cookie,
                     },
                 ),
@@ -420,7 +426,7 @@ def _probe_request_shapes_on_401(
                     {
                         "Content-Type": "application/json",
                         "Authorization": gateway_basic_auth,
-                        "Token": fresh_token,
+                        "X-Token": fresh_token,
                         "Cookie": fresh_cookie,
                     },
                 ),
@@ -469,7 +475,7 @@ def _probe_request_shapes_on_401(
                 req_headers = {
                     "Content-Type": "application/json",
                     "Authorization": gateway_basic_auth,
-                    "Token": fresh_token,
+                    "X-Token": fresh_token,
                     "Cookies": fresh_cookie,
                 }
                 try:
@@ -521,7 +527,9 @@ def post_form(
     if auth_combo in {"basic_token", "basic_token_bearer"} and gateway_basic_auth:
         headers["Authorization"] = gateway_basic_auth
         if token:
-            headers["Token"] = f"Bearer {token}" if auth_combo == "basic_token_bearer" else token
+            _set_x_token_for_basic_combo(
+                headers, token, bearer_prefix=(auth_combo == "basic_token_bearer")
+            )
     elif token:
         headers["Authorization"] = f"Bearer {token}"
         if auth_combo == "proxy_bearer" and gateway_basic_auth:
@@ -555,7 +563,9 @@ def post_json(
     if auth_combo in {"basic_token", "basic_token_bearer"} and gateway_basic_auth:
         headers["Authorization"] = gateway_basic_auth
         if token:
-            headers["Token"] = f"Bearer {token}" if auth_combo == "basic_token_bearer" else token
+            _set_x_token_for_basic_combo(
+                headers, token, bearer_prefix=(auth_combo == "basic_token_bearer")
+            )
     elif token:
         headers["Authorization"] = f"Bearer {token}"
         if auth_combo == "proxy_bearer" and gateway_basic_auth:
@@ -616,7 +626,9 @@ def post_json_with_headers(
     if auth_combo in {"basic_token", "basic_token_bearer"} and gateway_basic_auth:
         merged_headers["Authorization"] = gateway_basic_auth
         if token:
-            merged_headers["Token"] = f"Bearer {token}" if auth_combo == "basic_token_bearer" else token
+            _set_x_token_for_basic_combo(
+                merged_headers, token, bearer_prefix=(auth_combo == "basic_token_bearer")
+            )
     elif token:
         merged_headers["Authorization"] = f"Bearer {token}"
         if auth_combo == "proxy_bearer" and gateway_basic_auth:
@@ -827,8 +839,10 @@ def main() -> None:
     password = _env_value("PASSWORD")
     basic_auth_user = _env_value("BASIC_AUTH_USERNAME")
     basic_auth_password = _env_value("BASIC_AUTH_PASSWORD")
+    production_basic_user = _env_value("PRODUCTION_BASIC_AUTH_USERNAME")
+    production_basic_password = _env_value("PRODUCTION_BASIC_AUTH_PASSWORD")
     login_cookies = _env_value("LOGIN_COOKIES")
-    gateway_basic_auth = basic_auth_from_url or _build_basic_auth_value(basic_auth_user, basic_auth_password)
+    staging_gateway_basic_auth = basic_auth_from_url or _build_basic_auth_value(basic_auth_user, basic_auth_password)
     inferred_endpoint = "/fb-scheduler/"
 
     if configured_base:
@@ -842,12 +856,54 @@ def main() -> None:
     default_base = configured_base
     default_endpoint = configured_endpoint or inferred_endpoint
 
+    production_configured = _env_value("PRODUCTION_API_BASE_URL").strip()
+    production_configured, basic_auth_from_production_url = _extract_basic_from_url(production_configured)
+    if production_configured:
+        production_configured = production_configured.rstrip("/")
+        if production_configured.endswith("/index.php"):
+            production_configured = production_configured[: -len("/index.php")]
+
+    production_default_base = production_configured
+    production_gateway_basic_auth = basic_auth_from_production_url or _build_basic_auth_value(
+        production_basic_user,
+        production_basic_password,
+    )
+
+    if "api_smoke_api_base" not in st.session_state:
+        st.session_state.api_smoke_api_base = default_base
+
+    prod_url_hint = production_default_base or "（請在 .env 設定 PRODUCTION_API_BASE_URL）"
+    preset = st.radio(
+        "API 環境",
+        options=["Staging", "Production"],
+        index=0,
+        horizontal=True,
+        help=(
+            "Staging：Base URL 初始為 configs/.env 的 API_BASE_URL / FB_SCHEDULER_BASE_URL，"
+            "網關 Basic 為 BASIC_AUTH_*（或 API URL 內嵌）。"
+            f" Production：Base 為 PRODUCTION_API_BASE_URL（目前：{prod_url_hint}），"
+            "網關 Basic 為 PRODUCTION_BASIC_AUTH_*（或該 URL 內嵌）。"
+            "切換環境會清除已儲存的 Token，請重新 Login。"
+        ),
+        key="api_smoke_environment_preset",
+    )
+    last_preset = st.session_state.get("_api_smoke_last_preset_for_base")
+    if last_preset != preset:
+        if preset == "Staging":
+            st.session_state.api_smoke_api_base = default_base
+        else:
+            st.session_state.api_smoke_api_base = production_default_base
+        if last_preset is not None:
+            st.session_state.api_token = None
+        st.session_state._api_smoke_last_preset_for_base = preset
+
     col1, col2 = st.columns(2)
     with col1:
         api_base = st.text_input(
             "API Base URL (可含 /fb-scheduler)",
-            value=default_base,
+            key="api_smoke_api_base",
             placeholder="https://example.com",
+            help="可用上方「API 環境」切換 Staging / Production；仍可在此手動覆寫或微調。",
         )
         st.text_input("Username (.env)", value=username, disabled=True)
     with col2:
@@ -866,14 +922,24 @@ def main() -> None:
     if basic_auth_from_input_url:
         gateway_basic_auth = basic_auth_from_input_url
         full_url = f"{normalized_base}{normalized_endpoint}"
+    else:
+        gateway_basic_auth = (
+            production_gateway_basic_auth if preset == "Production" else staging_gateway_basic_auth
+        )
     if normalized_base != api_base.strip().rstrip("/") or normalized_endpoint != endpoint_path.strip():
         st.info(f"已自動修正請求目標：base={normalized_base}  endpoint={normalized_endpoint}")
     st.code(full_url, language="text")
 
     if gateway_basic_auth:
-        st.caption("已启用网关 Basic Auth（从 .env 读取）。")
+        if preset == "Production":
+            st.caption("已启用网关 Basic Auth（Production：PRODUCTION_BASIC_AUTH_* 或 PRODUCTION_API_BASE_URL 内嵌）。")
+        else:
+            st.caption("已启用网关 Basic Auth（Staging：BASIC_AUTH_* 或 API_BASE_URL 内嵌）。")
     else:
-        st.caption("未检测到网关 Basic Auth（BASIC_AUTH_USERNAME / BASIC_AUTH_PASSWORD）。")
+        if preset == "Production":
+            st.caption("未检测到 Production 网关 Basic Auth（PRODUCTION_BASIC_AUTH_USERNAME / PRODUCTION_BASIC_AUTH_PASSWORD）。")
+        else:
+            st.caption("未检测到 Staging 网关 Basic Auth（BASIC_AUTH_USERNAME / BASIC_AUTH_PASSWORD）。")
 
     if "api_token" not in st.session_state:
         st.session_state.api_token = None
@@ -900,19 +966,22 @@ def main() -> None:
         options=[
             "Bearer only",
             "Proxy-Authorization + Bearer",
-            "Basic + Token",
-            "Basic + Token(Bearer)",
+            "Basic + X-Token",
+            "Basic + X-Token (Bearer)",
         ],
         index=2,
         horizontal=True,
-        help="用于快速 A/B 不同网关环境：Bearer only / Proxy+Bearer / Basic+Token / Basic+Token(Bearer)。",
+        help=(
+            "Production 網關：Authorization: Basic …；登入後的 session token 以 X-Token 傳遞。"
+            " Basic+X-Token：X-Token 為裸 token；Basic+X-Token (Bearer)：X-Token 值為「Bearer 」前綴加 token。"
+        ),
     )
     auth_combo = "bearer_only"
     if api_auth_mode == "Proxy-Authorization + Bearer":
         auth_combo = "proxy_bearer"
-    elif api_auth_mode == "Basic + Token":
+    elif api_auth_mode == "Basic + X-Token":
         auth_combo = "basic_token"
-    elif api_auth_mode == "Basic + Token(Bearer)":
+    elif api_auth_mode == "Basic + X-Token (Bearer)":
         auth_combo = "basic_token_bearer"
     if auth_combo in {"proxy_bearer", "basic_token", "basic_token_bearer"} and not gateway_basic_auth:
         st.warning("当前未检测到网关 Basic 凭证，所选组合可能缺少必要请求头。")
