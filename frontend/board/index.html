@@ -837,6 +837,20 @@
                 <button class="chip" :class="{ active: mode === 'live' }" @click="switchMode('live')" :disabled="actionBusy">Live API</button>
               </div>
               <div class="tiny" style="margin-top:8px;">Mock 下动作只改前端本地数据，便于调 UI。</div>
+              <div class="side-sub" style="margin-top:12px;">CMS 上游</div>
+              <label class="tiny" style="display:block; margin-top:4px;">
+                <input
+                  type="checkbox"
+                  :checked="settings.cms_environment === 'production'"
+                  @change="settings.cms_environment = $event.target.checked ? 'production' : 'staging'"
+                  :disabled="actionBusy"
+                />
+                使用 Production CMS（Basic + X-Token，需 configs/.env 中 PRODUCTION_*）
+              </label>
+              <div class="tiny" style="margin-top:4px; opacity:0.9;">
+                与 API Smoke 成功组合一致：JSON 登录、网关 Basic、后续 Basic + X-Token；Staging 使用 API_BASE_URL。
+                <span x-show="settings.cms_environment === 'production'" style="display:block; margin-top:4px;">保存设置后，下次 Live 同步与贴文操作将指向 Production。</span>
+              </div>
               <div class="side-sub" style="margin-top:12px;">排程与同步</div>
               <label class="tiny">排程窗口（分钟）</label>
               <select class="field" x-model.number="settings.schedule_window_minutes">
@@ -1476,6 +1490,7 @@
             use_fake_link: false,
             fake_link_url: "https://abc.xyz/test-link",
             target_fan_page_id: "350584865140118",
+            cms_environment: "staging",
           },
           dialogs: {
             schedule: { open: false, item: null, error: "", urlHint: "" },
@@ -1759,7 +1774,8 @@
               });
               const data = await res.json().catch(() => ({}));
               if (!res.ok) throw new Error(data.detail || "save failed");
-              this.message = "设置已保存";
+              this.message = "设置已保存，正在按新 CMS 环境刷新看板…";
+              await this.reloadAll();
             } catch (e) {
               this.message = "设置保存失败: " + e.message;
             }

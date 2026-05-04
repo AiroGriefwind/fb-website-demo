@@ -23,7 +23,7 @@ from src.dashboard.config import (
 from src.dashboard.data_utils import load_pending_base, load_published_items, load_scheduled_items
 from src.dashboard.fb_action_client import FBActionClient
 from src.dashboard.frontend_templates import build_chip_color_script, build_schedule_pick_script
-from src.dashboard.live_api_sync import sync_live_data_to_sample_files
+from src.dashboard.live_api_sync import read_cms_use_production_from_settings, sync_live_data_to_sample_files
 from src.dashboard.media_utils import parse_publish_time, resolve_thumbnail_src, round_up_to_window, to_utc_iso_z
 from src.dashboard.scheduling_utils import (
     build_scheduled_key,
@@ -189,6 +189,7 @@ def _refresh_board_from_api() -> tuple[bool, str]:
     result = sync_live_data_to_sample_files(
         enable_category_alias_mode=bool(st.session_state.get("cfg_enable_category_alias_mode", False)),
         target_fan_page_id=str(st.session_state.get("cfg_target_fan_page_id", "350584865140118")).strip(),
+        use_production=read_cms_use_production_from_settings(),
     )
     if result.get("ok"):
         return True, (

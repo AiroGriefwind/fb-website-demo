@@ -413,6 +413,11 @@ def get_sidebar_settings() -> dict[str, Any]:
     except Exception:
         _eg = 2
     _eg = max(1, min(5, _eg))
+    _cms_env = str(current.get("cfg_cms_environment", current.get("cms_environment", "staging"))).strip() or "staging"
+    if _cms_env.lower() in ("production", "prod"):
+        _cms_env = "production"
+    else:
+        _cms_env = "staging"
     return {
         "schedule_window_minutes": int(current.get("schedule_window_minutes", DEFAULT_SCHEDULE_WINDOW_MINUTES)),
         "early_publish_guard_slots": _eg,
@@ -422,6 +427,7 @@ def get_sidebar_settings() -> dict[str, Any]:
         "fake_link_url": str(current.get("cfg_fake_link_url", current.get("fake_link_url", "https://abc.xyz/test-link"))).strip()
         or "https://abc.xyz/test-link",
         "target_fan_page_id": str(current.get("cfg_target_fan_page_id", "350584865140118")).strip() or "350584865140118",
+        "cms_environment": _cms_env,
         "updated_at": str(current.get("updated_at", "")),
     }
 
@@ -435,6 +441,8 @@ def put_sidebar_settings(payload: dict[str, Any]) -> dict[str, Any]:
     except Exception:
         _eg_put = 2
     _eg_put = max(1, min(5, _eg_put))
+    _cms_in = str(payload.get("cms_environment", "staging") or "staging").strip().lower()
+    _cms_norm = "production" if _cms_in in ("production", "prod") else "staging"
     sessions["default"] = {
         "cfg_schedule_window_minutes": int(payload.get("schedule_window_minutes", DEFAULT_SCHEDULE_WINDOW_MINUTES)),
         "schedule_window_minutes": int(payload.get("schedule_window_minutes", DEFAULT_SCHEDULE_WINDOW_MINUTES)),
@@ -449,6 +457,8 @@ def put_sidebar_settings(payload: dict[str, Any]) -> dict[str, Any]:
         "fake_link_url": str(payload.get("fake_link_url", "https://abc.xyz/test-link")).strip()
         or "https://abc.xyz/test-link",
         "cfg_target_fan_page_id": str(payload.get("target_fan_page_id", "350584865140118")).strip() or "350584865140118",
+        "cfg_cms_environment": _cms_norm,
+        "cms_environment": _cms_norm,
         "updated_at": datetime.now(HKT_TZ).isoformat(),
     }
     raw["sessions"] = sessions

@@ -13,7 +13,7 @@ if str(WORKSPACE_ROOT) not in sys.path:
     sys.path.insert(0, str(WORKSPACE_ROOT))
 
 from src.dashboard.board_view import render_today_board
-from src.dashboard.live_api_sync import sync_live_data_to_sample_files
+from src.dashboard.live_api_sync import read_cms_use_production_from_settings, sync_live_data_to_sample_files
 from src.dashboard.sidebar_view import (
     init_settings_state,
     render_settings_dialog_if_needed,
@@ -89,6 +89,7 @@ def main() -> None:
         sync_result = sync_live_data_to_sample_files(
             enable_category_alias_mode=bool(st.session_state.get("cfg_enable_category_alias_mode", False)),
             target_fan_page_id=str(st.session_state.get("cfg_target_fan_page_id", "350584865140118")).strip(),
+            use_production=read_cms_use_production_from_settings(),
         )
         if sync_result.get("ok"):
             st.caption(

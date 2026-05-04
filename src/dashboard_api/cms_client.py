@@ -122,21 +122,26 @@ def _json_post(
 
 
 class CmsActionClient:
-    def __init__(self) -> None:
-        raw_base = _env_value("API_BASE_URL")
+    def __init__(self, *, use_production: bool = False) -> None:
+        self._use_production = bool(use_production)
+        raw_base = _env_value("PRODUCTION_API_BASE_URL") if self._use_production else _env_value("API_BASE_URL")
         raw_base, user_from_url, pass_from_url = _extract_basic_from_url(raw_base)
         self.base_url = _normalize_endpoint_url(raw_base)
         self.username = _credential_value("CMS_USERNAME", "USERNAME")
         self.password = _credential_value("CMS_PASSWORD", "PASSWORD")
-        self.basic_user = _env_value("BASIC_AUTH_USERNAME") or user_from_url
-        self.basic_pass = _env_value("BASIC_AUTH_PASSWORD") or pass_from_url
+        if self._use_production:
+            self.basic_user = _env_value("PRODUCTION_BASIC_AUTH_USERNAME") or user_from_url
+            self.basic_pass = _env_value("PRODUCTION_BASIC_AUTH_PASSWORD") or pass_from_url
+        else:
+            self.basic_user = _env_value("BASIC_AUTH_USERNAME") or user_from_url
+            self.basic_pass = _env_value("BASIC_AUTH_PASSWORD") or pass_from_url
         self.login_cookies = _env_value("LOGIN_COOKIES")
         self._token = ""
         self._cookie = self.login_cookies
 
     def ready(self) -> tuple[bool, str]:
         if not self.base_url:
-            return False, "missing API_BASE_URL"
+            return False, ("missing PRODUCTION_API_BASE_URL" if self._use_production else "missing API_BASE_URL")
         if not self.username or not self.password:
             return False, "missing USERNAME/PASSWORD"
         return True, ""
@@ -162,7 +167,15 @@ class CmsActionClient:
         return False, _extract_message(resp_json, err or f"login failed ({status})")
 
     def _auth_headers(self) -> dict[str, str]:
-        headers = {"Content-Type": "application/json; charset=utf-8", "Authorization": f"Bearer {self._token}"}
+        headers = {"Content-Type": "application/json; charset=utf-8"}
+        if self._use_production:
+            if self.basic_user or self.basic_pass:
+                headers["Authorization"] = _build_basic_auth(self.basic_user, self.basic_pass)
+            headers["X-Token"] = self._token
+            if self._cookie:
+                headers["Cookies"] = self._cookie
+            return headers
+        headers["Authorization"] = f"Bearer {self._token}"
         if self._cookie:
             headers["Cookie"] = self._cookie
         return headers

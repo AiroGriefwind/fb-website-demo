@@ -13,6 +13,7 @@ import streamlit as st
 from dotenv import dotenv_values
 
 from src.dashboard.config import CATEGORY_ORDER, HKT_TZ, PENDING_FILE, PUBLISHED_FILE, SCHEDULED_FILE
+from src.dashboard_api.cms_client import _extract_token as _cms_extract_token
 
 ENV_PATH = Path(__file__).resolve().parents[2] / "configs" / ".env"
 ENV_VALUES = {k: v for k, v in dotenv_values(ENV_PATH).items() if isinstance(v, str)}
@@ -65,6 +66,7 @@ def _header_shape(headers: dict[str, str]) -> dict[str, Any]:
         "authorization_prefix": auth_value.split(" ", 1)[0] if auth_value else "",
         "has_cookie": "Cookie" in headers,
         "has_cookies": "Cookies" in headers,
+        "has_x_token": "X-Token" in headers,
         "content_type": headers.get("Content-Type", ""),
     }
 
@@ -130,9 +132,11 @@ def _trace_safe_headers(headers: dict[str, str]) -> dict[str, str]:
                 out[k] = "Basic ***"
             else:
                 out[k] = "***"
-        elif lk == "cookie":
+        elif lk in ("cookie", "cookies"):
             s = str(v)
             out[k] = (s[:20] + "…") if len(s) > 20 else (s or "")
+        elif lk == "x-token":
+            out[k] = "***"
         else:
             out[k] = str(v)
     return out
@@ -651,6 +655,19 @@ def _to_pending_rows(
     return rows
 
 
+def read_cms_use_production_from_settings() -> bool:
+    """与看板「设置」中 CMS 环境开关一致（dashboard_settings_state.json）。"""
+    settings_file = WORKSPACE_ROOT / "data" / "samples" / "dashboard_settings_state.json"
+    try:
+        raw = json.loads(settings_file.read_text(encoding="utf-8")) if settings_file.exists() else {}
+        sessions = raw.get("sessions", {}) if isinstance(raw.get("sessions", {}), dict) else {}
+        default = sessions.get("default", {}) if isinstance(sessions.get("default", {}), dict) else {}
+        v = str(default.get("cfg_cms_environment", default.get("cms_environment", "staging"))).strip().lower()
+        return v in ("production", "prod")
+    except Exception:
+        return False
+
+
 def _extract_data_list(payload: Any) -> list[dict[str, Any]]:
     if isinstance(payload, dict):
         data = payload.get("data", [])
@@ -662,26 +679,40 @@ def _extract_data_list(payload: Any) -> list[dict[str, Any]]:
 
 
 @st.cache_data(show_spinner=False, ttl=60)
-def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, target_fan_page_id: str = "") -> dict[str, Any]:
+def sync_live_data_to_sample_files(
+    enable_category_alias_mode: bool = False,
+    target_fan_page_id: str = "",
+    use_production: bool = False,
+) -> dict[str, Any]:
     trace: list[dict[str, Any]] = []
     try:
+        use_prod = bool(use_production)
         # region agent log
         _debug_log(
             hypothesis_id="H6",
             location="live_api_sync.py:sync_live_data_to_sample_files",
             message="Sync function entered",
-            data={"enable_category_alias_mode": bool(enable_category_alias_mode)},
+            data={
+                "enable_category_alias_mode": bool(enable_category_alias_mode),
+                "use_production": use_prod,
+            },
         )
         # endregion
-        api_base = _secret_or_env("API_BASE_URL")
+        if use_prod:
+            api_base = _secret_or_env("PRODUCTION_API_BASE_URL")
+            basic_user = _secret_or_env("PRODUCTION_BASIC_AUTH_USERNAME")
+            basic_pass = _secret_or_env("PRODUCTION_BASIC_AUTH_PASSWORD")
+        else:
+            api_base = _secret_or_env("API_BASE_URL")
+            basic_user = _secret_or_env("BASIC_AUTH_USERNAME")
+            basic_pass = _secret_or_env("BASIC_AUTH_PASSWORD")
         username = _secret_or_env("USERNAME")
         password = _secret_or_env("PASSWORD")
-        basic_user = _secret_or_env("BASIC_AUTH_USERNAME")
-        basic_pass = _secret_or_env("BASIC_AUTH_PASSWORD")
         posts_limit = int(_secret_or_env("API_POSTS_LIMIT", "10") or 10)
 
         if not api_base or not username or not password:
-            return {"ok": False, "message": "missing API_BASE_URL/USERNAME/PASSWORD", "cms_upstream_calls": trace}
+            miss = "PRODUCTION_API_BASE_URL/USERNAME/PASSWORD" if use_prod else "API_BASE_URL/USERNAME/PASSWORD"
+            return {"ok": False, "message": f"missing {miss}", "cms_upstream_calls": trace}
 
         api_url, url_user, url_pass = _extract_basic_from_url(api_base)
         api_url = _normalize_endpoint_url(api_url)
@@ -700,7 +731,7 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
             trace=trace,
             call_label="CMS login（Basic 网关 + JSON 用户名密码 → token）",
         )
-        token = str((login_payload.get("data", {}) if isinstance(login_payload, dict) else {}).get("token", "")).strip()
+        token = _cms_extract_token(login_payload) if isinstance(login_payload, dict) else ""
         if code != 200 or not token:
             # region agent log
             _debug_log(
@@ -718,26 +749,41 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
             }
 
         session_cookie = str(login_resp_headers.get("Set-Cookie", "")).split(";", 1)[0].strip()
-        common_headers = {
-            "Content-Type": "application/json; charset=utf-8",
-            "Authorization": f"Bearer {token}",
-        }
-        if session_cookie:
-            common_headers["Cookie"] = session_cookie
+        if use_prod:
+            common_headers = {"Content-Type": "application/json; charset=utf-8"}
+            if basic_user or basic_pass:
+                raw_b = f"{basic_user}:{basic_pass}".encode("utf-8")
+                common_headers["Authorization"] = f"Basic {base64.b64encode(raw_b).decode('ascii')}"
+            common_headers["X-Token"] = token
+            if session_cookie:
+                common_headers["Cookies"] = session_cookie
+            pub_label = "CMS fb_published（Basic + X-Token + Cookies）"
+            sch_label = "CMS fb_scheduled（Basic + X-Token + Cookies）"
+            posts_suffix = "Basic + X-Token + Cookies）"
+        else:
+            common_headers = {
+                "Content-Type": "application/json; charset=utf-8",
+                "Authorization": f"Bearer {token}",
+            }
+            if session_cookie:
+                common_headers["Cookie"] = session_cookie
+            pub_label = "CMS fb_published（Bearer + Cookie）"
+            sch_label = "CMS fb_scheduled（Bearer + Cookie）"
+            posts_suffix = "Bearer + Cookie）"
 
         _, _, published_payload = _json_post_traced(
             api_url,
             {"action": "fb_published"},
             common_headers,
             trace=trace,
-            call_label="CMS fb_published（Bearer + Cookie）",
+            call_label=pub_label,
         )
         _, _, scheduled_payload = _json_post_traced(
             api_url,
             {"action": "fb_scheduled"},
             common_headers,
             trace=trace,
-            call_label="CMS fb_scheduled（Bearer + Cookie）",
+            call_label=sch_label,
         )
 
         now_iso = datetime.now(HKT_TZ).isoformat()
@@ -751,7 +797,7 @@ def sync_live_data_to_sample_files(enable_category_alias_mode: bool = False, tar
                 {"action": "posts", "category": cat, "search": "", "limit": posts_limit},
                 common_headers,
                 trace=trace,
-                call_label=f"CMS posts（{cat}，Bearer + Cookie）",
+                call_label=f"CMS posts（{cat}，{posts_suffix}",
             )
             current_posts_items = _extract_data_list(posts_payload)
             posts_items_all.extend(current_posts_items)

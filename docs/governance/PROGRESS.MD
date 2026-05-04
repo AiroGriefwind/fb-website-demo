@@ -1601,3 +1601,25 @@
 
 下一步:
 - 将本条治理记录与 `api_smoke_test_app.py` 变更提交并推送到 `public`（fb-website-demo）`main`，供 demo 站点侧同步。
+
+日期时间(HKT): 2026-05-04（看板接入 Production）
+负责人/LLM: wangz / Auto
+分支/worktree: feature/bot-ui-ops（本仓库）| demo仓库:AiroGriefwind/fb-website-demo/main（与本条一并推送）
+完成内容:
+- [本仓库] 将 **CMS Staging / Production** 正式接入 **Dashboard API 与 Live 同步**：`src/dashboard_api/cms_client.py` 的 `CmsActionClient` 支持 `use_production`；Production 时后续动作为 **网关 `Authorization: Basic` + `X-Token` + `Cookies`（session）**，与 API Smoke 成功组合一致；Staging 仍走 **Bearer + `Cookie`**。
+- [本仓库] `src/dashboard/live_api_sync.py`：`sync_live_data_to_sample_files(..., use_production=...)` 按环境选择 `API_BASE_URL` / `PRODUCTION_API_BASE_URL` 与对应 Basic 凭据；登录后 Production 分支使用 **Basic + X-Token + Cookies** 拉取 `fb_published` / `fb_scheduled` / `posts`。新增 `read_cms_use_production_from_settings()` 读取 `data/samples/dashboard_settings_state.json` 与看板设置对齐。
+- [本仓库] `src/dashboard_api/services.py`：统一 `_make_cms_client()`，所有 `fb_*` 动作与 Live 同步使用当前环境；`src/dashboard/board_view.py` 与 `src/dashboard/app.py` 的 Streamlit 同步同样传入 `use_production`。
+- [本仓库] `src/dashboard_api/server.py`：GET/PUT `/api/sidebar/settings` 增加 **`cms_environment`**（`staging` | `production`）并持久化到 `dashboard_settings_state.json`。
+- [本仓库] `frontend/board/index.html`：左下「设置」增加 **「CMS 上游」** 复选框（使用 Production CMS），保存后自动 `reloadAll()` 按新环境刷新看板。
+- [本仓库] `src/dashboard_api/run.py`：模块注释说明 Uvicorn 入口与 Staging/Production 行为，便于与 `api_smoke_test_app` 对照。
+
+验证结果:
+- `python -m py_compile` 覆盖本次修改的 Python 文件；`python -m pytest tests/test_scheduler_plugin.py -q`：`6 passed`。
+- 逻辑与 Smoke 一致：JSON 登录、网关 Basic、Production 后续 **Basic + X-Token**；需本地 `configs/.env` 配置 `PRODUCTION_API_BASE_URL` 与 `PRODUCTION_BASIC_AUTH_*`。
+
+风险/阻塞:
+- `data/samples/dashboard_schedule_method_state.json` 等运行态文件仍建议不提交，避免将联调机 `pid`/`plink` 映射推入远端。
+- 切换 Production 后所有 Live 写操作指向正式 CMS，需业务侧确认再开启。
+
+下一步:
+- 本批代码与治理记录推送到 `public` `main`；协作者 `git pull` 后重启 `python -m src.dashboard_api.run` 并在看板「设置」中验证 Staging/Production 切换与 Live 同步。

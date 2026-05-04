@@ -17,6 +17,7 @@ from src.dashboard.config import (
 )
 from src.dashboard.data_utils import read_json_list, write_json_list
 from src.dashboard.media_utils import parse_publish_time, to_utc_iso_z
+from src.dashboard.live_api_sync import read_cms_use_production_from_settings
 from src.dashboard_api.cms_client import CmsActionClient
 from src.scheduler_plugin.calendar_engine import get_schedule_for_date
 
@@ -298,6 +299,10 @@ def _read_default_session_settings() -> dict[str, Any]:
         return {}
 
 
+def _make_cms_client() -> CmsActionClient:
+    return CmsActionClient(use_production=read_cms_use_production_from_settings())
+
+
 def _read_fake_link_settings(default_session: dict[str, Any] | None = None) -> tuple[bool, str]:
     session = default_session if isinstance(default_session, dict) else _read_default_session_settings()
     enabled = bool(
@@ -340,6 +345,7 @@ def _refresh_live_sample_files(default_session: dict[str, Any]) -> dict[str, Any
     return sync_live_data_to_sample_files(
         enable_category_alias_mode=enable_alias,
         target_fan_page_id=target_fan,
+        use_production=read_cms_use_production_from_settings(),
     )
 
 
@@ -650,7 +656,7 @@ def publish_from_pending(
             }
         return {"ok": False, "message": plan_message}
 
-    client = CmsActionClient()
+    client = _make_cms_client()
     for row in pre_updates:
         update_result = client.run_action(
             "fb_update",
@@ -723,7 +729,7 @@ def update_scheduled(payload: dict[str, Any]) -> dict[str, Any]:
         post_link_id = str(payload.get("post_link_id", "")).strip()
         if post_id <= 0 or not post_link_id:
             return {"ok": False, "message": "missing post_id/post_link_id for cancel-schedule step"}
-        client = CmsActionClient()
+        client = _make_cms_client()
         del_result = client.run_action("fb_delete", {"post_id": post_id, "post_link_id": post_link_id})
         if not bool(del_result.get("ok")):
             return {"ok": False, "message": f"cancel schedule failed: {del_result.get('message', 'fb_delete')}"}
@@ -801,7 +807,7 @@ def update_scheduled(payload: dict[str, Any]) -> dict[str, Any]:
             }
         return {"ok": False, "message": plan_message}
 
-    client = CmsActionClient()
+    client = _make_cms_client()
     fake_link_enabled, fake_link_url = _read_fake_link_settings()
     for row in pre_updates:
         update_result = client.run_action(
@@ -858,7 +864,7 @@ def update_scheduled(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def delete_scheduled(post_id: int, post_link_id: str) -> dict[str, Any]:
-    client = CmsActionClient()
+    client = _make_cms_client()
     result = client.run_action("fb_delete", {"post_id": int(post_id), "post_link_id": str(post_link_id).strip()})
     if not bool(result.get("ok")):
         return {"ok": False, "message": str(result.get("message", "delete failed"))}
@@ -882,7 +888,7 @@ def delete_all_published() -> dict[str, Any]:
         seen.add(dedup_key)
         pairs.append((post_id, post_link_id))
 
-    client = CmsActionClient()
+    client = _make_cms_client()
     failed: list[dict[str, Any]] = []
     success_count = 0
     for post_id, post_link_id in pairs:
